@@ -29,7 +29,7 @@ def get_config():
     fast_fid = config.fast_fid
     optim = config.optim
     test = config.test
-    training.model_checkpoint = "./data/checkpoints/generative_model/flowMatching/unet-cifar10-65000-model"
+    #training.model_checkpoint = "./data/checkpoints/generative_model/flowMatching/unet-cifar10-65000-model"
     #training.optim_checkpoint = ".\data\checkpoints\ddpm-cifar10-81000-optim.pth"
 
     model = config.model

@@ -32,15 +32,12 @@ def get_config():
     #training.model_checkpoint = "E:\jikewct\Model\\rect_flow\cvt_model.pth"
     #training.model_checkpoint = "/home/jikewct/public/jikewct/Model/rect_flow/CelebA-HQ-Pytorch_model_ema.pth"
     training.continuous = False
-    training.batch_size = 8
+    training.batch_size = 16
     training.epochs = 100
     training.snapshot_freq = 1000
     training.log_freq = 100
     training.eval_freq = 4000
-    training.test_metric_freq = 10000
-
-    #training.model_checkpoint = "./data/checkpoints/generative_model/flowMatching/ncsnpp-cifar10-14000-model"
-    #training.optim_checkpoint = ".\data\checkpoints\ddpm-cifar10-81000-optim.pth"
+    training.test_metric_freq = 100000
 
     model.name = "flowMatching"
     model.nn_name = "ncsnpp"
@@ -48,15 +45,15 @@ def get_config():
     #model.norm = "gn"
     #model.activation = "elu"
 
-    model.scale_by_sigma = True
+    model.scale_by_sigma = False
     model.ema_rate = 0.999
     model.dropout = 0.
     model.norm = 'GroupNorm'
     model.activation = 'swish'
     model.nf = 128
-    model.channel_mults = (1, 1, 2, 2, 2)
+    model.channel_mults = (1, 1, 2, 2,)
     model.num_res_blocks = 2
-    model.attention_resolutions = (12, )
+    model.attention_resolutions = (8, )
     model.resamp_with_conv = True
     model.conditional = True
     model.fir = True
@@ -73,12 +70,12 @@ def get_config():
     model.conv_size = 3
 
     model.sigma_dist = "geometric"
-    model.sigma_max = 380
+    model.sigma_max = 50
     model.sigma_min = 0.01
-    model.num_scales = 2000
+    model.num_scales = 1000
 
     data.category = "church_outdoor_train"
-    data.img_size = (96, 96)
+    data.img_size = (64, 64)
 
     test.save_path = "./data/test/"
     test.batch_size = 10
@@ -96,6 +93,7 @@ def get_config():
     sampling.atol = 1e-3
     sampling.method = 'ode'
 
+    optim.lr = 1e-4
     config.pipeline = "FlowMatchingPipeLine"
 
     return config

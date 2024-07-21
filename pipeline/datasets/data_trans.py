@@ -6,7 +6,7 @@ class ImageCenter:
         pass
 
     def __call__(self, pic):
-        #print(pic.shape)
+        #print(pic.shape, pic.max(),pic.min(), pic.mean())
         return 2 * pic - 1
 
 

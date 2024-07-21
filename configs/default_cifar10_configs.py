@@ -62,7 +62,7 @@ def get_default_configs():
     fast_fid.num_samples = 1000
     fast_fid.batch_size = 64
     fast_fid.save_path = "./data/test/"
-    fast_fid.ds_state_file = "E:\jikewct\Dataset\cifar10\cifar-10-images\\train_fid_stats.npz"
+    fast_fid.ds_state_file = "/home/jikewct/public/jikewct/Dataset/cifar10/cifar-10-images/train_fid_stats.npz"
 
     # data
     config.data = data = ml_collections.ConfigDict()
@@ -71,7 +71,7 @@ def get_default_configs():
     data.img_channels = 3
     data.num_classes = 10
 
-    data.root_path = "E:\jikewct\Dataset\cifar10"
+    data.root_path = "/home/jikewct/public/jikewct/Dataset/cifar10"
     data.random_flip = True
     data.centered = True
     data.uniform_dequantization = False

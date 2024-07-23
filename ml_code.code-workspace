@@ -1,0 +1,28 @@
+{
+	"folders": [
+		{
+			"name": "Model",
+			"path": "../../Model"
+		},
+		{
+			"name": "Dataset",
+			"path": "../../Dataset"
+		},
+		{
+			"name": "ml_code",
+			"path": "."
+		},
+		{
+			"name": "LoRA",
+			"path": "../LoRA"
+		},
+		{
+			"name": "RectifiedFlow",
+			"path": "../RectifiedFlow"
+		}
+	],
+	"settings": {
+		"editor.defaultFormatter": "ms-python.black-formatter",
+
+	}
+}

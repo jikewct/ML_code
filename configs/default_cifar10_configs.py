@@ -70,7 +70,7 @@ def get_default_configs():
     data.img_size = (32, 32)
     data.img_channels = 3
     data.num_classes = 10
-
+    data.img_class = ""
     data.root_path = "/home/jikewct/public/jikewct/Dataset/cifar10"
     data.random_flip = True
     data.centered = True
@@ -85,7 +85,7 @@ def get_default_configs():
     model.time_emb_dim = 512
     model.time_emb_scale = 1.0
     model.dropout = 0.1
-    model.attention_resolutions = (1, )
+    model.attention_resolutions = (1,)
     model.norm = "gn"
     model.num_groups = 32
     model.channel_mults = (1, 2)
@@ -101,6 +101,7 @@ def get_default_configs():
 
     model.embedding_type = "fourier"
     model.ode = False
+    model.load_ckpt_strict = False
 
     # optimization
     config.optim = optim = ml_collections.ConfigDict()
@@ -116,6 +117,8 @@ def get_default_configs():
     optim.amsgrad = False
 
     config.seed = 42
-    config.device = (torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu"))
+    config.device = (
+        torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+    )
     config.pipeline = ""
     return config

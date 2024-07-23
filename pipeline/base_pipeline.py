@@ -21,7 +21,7 @@ class BasePipeLine(ABC):
 
     def __init__(self, config):
         self.init_parameters(config)
-        #self.init_data_loader()
+        # self.init_data_loader()
         self.init_model()
         self.init_optimizer()
         self.load_checkpoint()
@@ -37,31 +37,40 @@ class BasePipeLine(ABC):
 
     def init_data_loader(self):
 
-        self.train_loader, self.test_loader = datasetsHelper.get_loader(self.config.data.dataset,
-                                                                        root=self.config.data.root_path,
-                                                                        batch_size=self.config.training.batch_size,
-                                                                        img_size= self.config.data.img_size)
+        self.train_loader, self.test_loader = datasetsHelper.get_loader(
+            self.config.data.dataset,
+            root=self.config.data.root_path,
+            batch_size=self.config.training.batch_size,
+            img_size=self.config.data.img_size,
+            img_class=self.config.data.img_class,
+        )
 
     def init_optimizer(self):
         config = self.config
         parameters = self.model.parameters()
-        if config.optim.optimizer == 'Adam':
-            self.optimizer = optim.Adam(parameters,
-                                        lr=config.optim.lr,
-                                        weight_decay=config.optim.weight_decay,
-                                        betas=(config.optim.beta1, 0.999),
-                                        amsgrad=config.optim.amsgrad,
-                                        eps=config.optim.eps)
-        elif config.optim.optimizer == 'RMSProp':
-            self.optimizer = optim.RMSprop(parameters, lr=config.optim.lr, weight_decay=config.optim.weight_decay)
-        elif config.optim.optimizer == 'SGD':
+        if config.optim.optimizer == "Adam":
+            self.optimizer = optim.Adam(
+                parameters,
+                lr=config.optim.lr,
+                weight_decay=config.optim.weight_decay,
+                betas=(config.optim.beta1, 0.999),
+                amsgrad=config.optim.amsgrad,
+                eps=config.optim.eps,
+            )
+        elif config.optim.optimizer == "RMSProp":
+            self.optimizer = optim.RMSprop(
+                parameters, lr=config.optim.lr, weight_decay=config.optim.weight_decay
+            )
+        elif config.optim.optimizer == "SGD":
             self.optimizer = optim.SGD(parameters, lr=config.optim.lr, momentum=0.9)
         else:
-            raise NotImplementedError('Optimizer {} not understood.'.format(config.optim.optimizer))
+            raise NotImplementedError(
+                "Optimizer {} not understood.".format(config.optim.optimizer)
+            )
 
     def init_metrics(self):
         self.current_epoch = monitor.RunningAverageMeter(0)
-        self.current_step = monitor.RunningAverageMeter(1)
+        self.current_step = monitor.RunningAverageMeter(0)
         self.train_loss = monitor.RunningAverageMeter(0)
         self.eval_loss = monitor.RunningAverageMeter(0)
         self.log_time_meter = monitor.TimeMeter()
@@ -74,7 +83,7 @@ class BasePipeLine(ABC):
 
     def load_checkpoint(self):
         model_checkpoint = self.config.training.model_checkpoint
-        #optim_checkpoint = self.config.training.optim_checkpoint
+        # optim_checkpoint = self.config.training.optim_checkpoint
         if model_checkpoint is None or model_checkpoint.rstrip() == "":
             return
         self.model.load_checkpoint(model_checkpoint)
@@ -83,6 +92,7 @@ class BasePipeLine(ABC):
     def save_checkpoint(self):
         filepath = f"{self.config.training.ckpt_dir}/{self.config.training.project_name}/{self.config.model.name}/{self.config.model.nn_name}-{self.config.data.dataset}-{self.current_step.val}-model"
         os.makedirs(os.path.split(filepath)[0], exist_ok=True)
+        self.set_eval_mode()  ## for lora model to split parameters
         self.model.save_checkpoint(filepath)
         logging.info(f"save model checkpoint success! {filepath}")
 
@@ -103,7 +113,10 @@ class BasePipeLine(ABC):
 
     def before_step(self):
         self.set_train_mode()
-        if self.current_step.val % self.config.training.log_freq == 1:
+        if (
+            self.current_step.val == 0
+            or self.current_step.val % self.config.training.log_freq == 1
+        ):
             self.log_time_meter.start()
 
     def after_step(self):
@@ -115,7 +128,10 @@ class BasePipeLine(ABC):
             self.eval_loop()
         if step % self.config.training.snapshot_freq == 0:
             self.save_checkpoint()
-        if (step > self.config.fast_fid.begin_step and step % self.config.training.test_metric_freq == 0):
+        if (
+            step > self.config.fast_fid.begin_step
+            and step % self.config.training.test_metric_freq == 0
+        ):
             self.test_metric_loop()
         self.current_step.inc()
 
@@ -134,62 +150,94 @@ class BasePipeLine(ABC):
         sample_num = self.config.fast_fid.num_samples
         batch_size = self.config.fast_fid.batch_size
         ds_state_file = self.config.fast_fid.ds_state_file
-        save_path = "{}/fast_fid/{}/".format(self.config.fast_fid.save_path, int(time.time()))
+        save_path = "{}/fast_fid/{}/".format(
+            self.config.fast_fid.save_path, int(time.time())
+        )
         self.generate_samples(batch_size, sample_num, save_path, "test fid")
         paths = [ds_state_file, save_path]
-        fid_score = pytorch_fid.fid_score.calculate_fid_given_paths(paths, 50, self.device, 2048)
-        logging.info(f"fid score:{fid_score}, train steps: {self.current_step.val}, image path:{save_path}")
+        fid_score = pytorch_fid.fid_score.calculate_fid_given_paths(
+            paths, 50, self.device, 2048
+        )
+        logging.info(
+            f"fid score:{fid_score}, train steps: {self.current_step.val}, image path:{save_path}"
+        )
         if self.config.training.log_to_wandb:
-            wandb.log({"fid_score": fid_score, "train_step": self.current_step.val / self.config.training.log_freq})
+            wandb.log(
+                {
+                    "fid_score": fid_score,
+                    "train_step": self.current_step.val / self.config.training.log_freq,
+                }
+            )
 
     def generate_samples(self, batch_size, sample_num, save_path, desc=""):
         self.test_time_meter.start()
-        logging.info(f"==================begin {desc} generate samples =======================")
+        logging.info(
+            f"==================begin {desc} generate samples ======================="
+        )
         self.before_eval()
-        batch_size_list = np.concatenate([np.asarray([batch_size] * (sample_num // batch_size), dtype=np.int64), [sample_num % batch_size]])
+        batch_size_list = np.concatenate(
+            [
+                np.asarray([batch_size] * (sample_num // batch_size), dtype=np.int64),
+                [sample_num % batch_size],
+            ]
+        )
         batch_size_list = np.delete(batch_size_list, np.where(batch_size_list == 0))
-        for iter, num in tqdm.tqdm(enumerate(batch_size_list), desc="Processing", total=len(batch_size_list)):
+        for iter, num in tqdm.tqdm(
+            enumerate(batch_size_list), desc="Processing", total=len(batch_size_list)
+        ):
             test_samples = self.sample(num, steps=self.sample_steps)
             self.save_result(test_samples, iter * batch_size, save_path)
         self.test_time_meter.stop()
-        logging.info("generate {} samples, time cost:{:.2f} seconds, save_path:{}".format(sample_num, self.test_time_meter.interval(), save_path))
-        logging.info(f"==================end {desc} generate samples =======================")
+        logging.info(
+            "generate {} samples, time cost:{:.2f} seconds, save_path:{}".format(
+                sample_num, self.test_time_meter.interval(), save_path
+            )
+        )
+        logging.info(
+            f"==================end {desc} generate samples ======================="
+        )
 
     def log_eval_status(self):
         debug_info = self.model.get_debug_info()
         logging.debug(debug_info)
-        logging.info("====epoch:{:04d},step:{:08d}, eval_loss:{:.8f}, eval_cost:{:.2f} ====".format(
-            self.current_epoch.val,
-            self.current_step.val,
-            self.eval_loss.avg,
-            self.eval_time_meter.interval(),
-        ))
+        logging.info(
+            "====epoch:{:04d},step:{:08d}, eval_loss:{:.8f}, eval_cost:{:.2f} ====".format(
+                self.current_epoch.val,
+                self.current_step.val,
+                self.eval_loss.avg,
+                self.eval_time_meter.interval(),
+            )
+        )
         if self.config.training.log_to_wandb:
             eval_log = {
                 "eval_loss": self.eval_loss.avg,
                 "eval_cost": self.eval_time_meter.interval(),
                 "samples": [wandb.Image(sample) for sample in self.eval_samples],
-                "train_step": self.current_step.val / self.config.training.log_freq
+                "train_step": self.current_step.val / self.config.training.log_freq,
             }
             wandb.log(eval_log)
 
     def log_train_status(self):
         debug_info = self.model.get_debug_info()
         logging.debug(debug_info)
-        logging.info("epoch:{:04d},step:{:08d}, train_loss:{:.8f}, total_cost:{:.2f}, lr:{:.8f}".format(
-            self.current_epoch.val,
-            self.current_step.val,
-            self.train_loss.avg,
-            self.log_time_meter.interval(),
-            self.get_lr(),
-        ))
+        logging.info(
+            "epoch:{:04d},step:{:08d}, train_loss:{:.8f}, total_cost:{:.2f}, lr:{:.8f}".format(
+                self.current_epoch.val,
+                self.current_step.val,
+                self.train_loss.avg,
+                self.log_time_meter.interval(),
+                self.get_lr(),
+            )
+        )
         if self.config.training.log_to_wandb:
-            debug_info.update({
-                "train_loss": self.train_loss.avg,
-                "lr": self.get_lr(),
-                "train_cost": self.log_time_meter.interval(),
-                "train_step": self.current_step.val / self.config.training.log_freq
-            })
+            debug_info.update(
+                {
+                    "train_loss": self.train_loss.avg,
+                    "lr": self.get_lr(),
+                    "train_cost": self.log_time_meter.interval(),
+                    "train_step": self.current_step.val / self.config.training.log_freq,
+                }
+            )
             wandb.log(debug_info)
 
         self.reset_loss()

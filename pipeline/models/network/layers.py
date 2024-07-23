@@ -10,19 +10,20 @@ import torch.nn.init as init
 from torch.nn.parameter import Parameter
 
 from .normalization import *
+from . import lora_layers
 
 
 def get_act(activation):
-    if activation == 'elu':
+    if activation == "elu":
         return nn.ELU()
-    elif activation == 'relu':
+    elif activation == "relu":
         return nn.ReLU()
-    elif activation == 'lrelu':
+    elif activation == "lrelu":
         return nn.LeakyReLU(negative_slope=0.2)
-    elif activation == 'swish':
+    elif activation == "swish":
         return nn.SiLU()
     else:
-        raise NotImplementedError('activation function does not exist!')
+        raise NotImplementedError("activation function does not exist!")
 
 
 def spectral_norm(layer, n_iters=1):
@@ -47,30 +48,52 @@ def conv3x3(in_planes, out_planes, stride=1, bias=True, spec_norm=False):
 
 
 def stride_conv3x3(in_planes, out_planes, kernel_size, bias=True, spec_norm=False):
-    conv = nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=2, padding=kernel_size // 2, bias=bias)
+    conv = nn.Conv2d(
+        in_planes,
+        out_planes,
+        kernel_size=kernel_size,
+        stride=2,
+        padding=kernel_size // 2,
+        bias=bias,
+    )
     if spec_norm:
         conv = spectral_norm(conv)
     return conv
 
 
 def dilated_conv3x3(in_planes, out_planes, dilation, bias=True, spec_norm=False):
-    conv = nn.Conv2d(in_planes, out_planes, kernel_size=3, padding=dilation, dilation=dilation, bias=bias)
+    conv = nn.Conv2d(
+        in_planes,
+        out_planes,
+        kernel_size=3,
+        padding=dilation,
+        dilation=dilation,
+        bias=bias,
+    )
     if spec_norm:
         conv = spectral_norm(conv)
 
     return conv
 
 
-def ncsn_conv1x1(in_planes, out_planes, stride=1, bias=True, dilation=1, init_scale=1., padding=0):
+def ncsn_conv1x1(in_planes, out_planes, stride=1, bias=True, dilation=1, init_scale=1.0, padding=0):
     """1x1 convolution. Same as NCSNv1/v2."""
-    conv = nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=bias, dilation=dilation, padding=padding)
+    conv = nn.Conv2d(
+        in_planes,
+        out_planes,
+        kernel_size=1,
+        stride=stride,
+        bias=bias,
+        dilation=dilation,
+        padding=padding,
+    )
     init_scale = 1e-10 if init_scale == 0 else init_scale
     conv.weight.data *= init_scale
     conv.bias.data *= init_scale
     return conv
 
 
-def ddpm_conv1x1(in_planes, out_planes, stride=1, bias=True, init_scale=1., padding=0):
+def ddpm_conv1x1(in_planes, out_planes, stride=1, bias=True, init_scale=1.0, padding=0):
     """1x1 convolution with DDPM initialization."""
     conv = nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, padding=padding, bias=bias)
     conv.weight.data = default_init(init_scale)(conv.weight.data.shape)
@@ -78,8 +101,8 @@ def ddpm_conv1x1(in_planes, out_planes, stride=1, bias=True, init_scale=1., padd
     return conv
 
 
-def variance_scaling(scale, mode, distribution, in_axis=1, out_axis=0, dtype=torch.float32, device='cpu'):
-    """Ported from JAX. """
+def variance_scaling(scale, mode, distribution, in_axis=1, out_axis=0, dtype=torch.float32, device="cpu"):
+    """Ported from JAX."""
 
     def _compute_fans(shape, in_axis=1, out_axis=0):
         receptive_field_size = np.prod(shape) / shape[in_axis] / shape[out_axis]
@@ -101,37 +124,85 @@ def variance_scaling(scale, mode, distribution, in_axis=1, out_axis=0, dtype=tor
         if distribution == "normal":
             return torch.randn(*shape, dtype=dtype, device=device) * np.sqrt(variance)
         elif distribution == "uniform":
-            return (torch.rand(*shape, dtype=dtype, device=device) * 2. - 1.) * np.sqrt(3 * variance)
+            return (torch.rand(*shape, dtype=dtype, device=device) * 2.0 - 1.0) * np.sqrt(3 * variance)
         else:
             raise ValueError("invalid distribution for variance scaling initializer")
 
     return init
 
 
-def default_init(scale=1.):
+def default_init(scale=1.0):
     """The same initialization used in DDPM."""
     scale = 1e-10 if scale == 0 else scale
-    return variance_scaling(scale, 'fan_avg', 'uniform')
+    return variance_scaling(scale, "fan_avg", "uniform")
 
 
-def ncsn_conv3x3(in_planes, out_planes, stride=1, bias=True, dilation=1, init_scale=1., padding=1):
+def ncsn_conv3x3(in_planes, out_planes, stride=1, bias=True, dilation=1, init_scale=1.0, padding=1):
     """3x3 convolution with PyTorch initialization. Same as NCSNv1/NCSNv2."""
     init_scale = 1e-10 if init_scale == 0 else init_scale
-    conv = nn.Conv2d(in_planes, out_planes, stride=stride, bias=bias, dilation=dilation, padding=padding, kernel_size=3)
+    conv = nn.Conv2d(
+        in_planes,
+        out_planes,
+        stride=stride,
+        bias=bias,
+        dilation=dilation,
+        padding=padding,
+        kernel_size=3,
+    )
     conv.weight.data *= init_scale
     conv.bias.data *= init_scale
     return conv
 
 
-def ddpm_conv3x3(in_planes, out_planes, stride=1, bias=True, dilation=1, init_scale=1., padding=1):
+def ddpm_conv3x3(in_planes, out_planes, stride=1, bias=True, dilation=1, init_scale=1.0, padding=1):
     """3x3 convolution with DDPM initialization."""
-    conv = nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=padding, dilation=dilation, bias=bias)
+    conv = nn.Conv2d(
+        in_planes,
+        out_planes,
+        kernel_size=3,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        bias=bias,
+    )
     conv.weight.data = default_init(init_scale)(conv.weight.data.shape)
     nn.init.zeros_(conv.bias)
     return conv
 
 
-class LayerEnum():
+def lora_ddpm_conv3x3(
+    in_planes,
+    out_planes,
+    stride=1,
+    bias=True,
+    dilation=1,
+    init_scale=1.0,
+    padding=1,
+    r=0,
+    lora_alpha=1,
+    lora_dropout=0.0,
+    merge_weights=True,
+):
+    """3x3 convolution with DDPM initialization."""
+    conv = lora_layers.LoRAConv2d(
+        in_planes,
+        out_planes,
+        3,
+        r,
+        lora_alpha,
+        lora_dropout,
+        merge_weights,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        bias=bias,
+    )
+    conv.weight.data = default_init(init_scale)(conv.weight.data.shape)
+    nn.init.zeros_(conv.bias)
+    return conv
+
+
+class LayerEnum:
 
     @staticmethod
     def get_norm(norm, num_channels, num_groups):
@@ -208,7 +279,15 @@ class CRPBlock(nn.Module):
 
 class CondCRPBlock(nn.Module):
 
-    def __init__(self, features, n_stages, num_classes, normalizer, act=nn.ReLU(), spec_norm=False):
+    def __init__(
+        self,
+        features,
+        n_stages,
+        num_classes,
+        normalizer,
+        act=nn.ReLU(),
+        spec_norm=False,
+    ):
         super().__init__()
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()
@@ -240,7 +319,11 @@ class RCUBlock(nn.Module):
 
         for i in range(n_blocks):
             for j in range(n_stages):
-                setattr(self, '{}_{}_conv'.format(i + 1, j + 1), conv3x3(features, features, stride=1, bias=False, spec_norm=spec_norm))
+                setattr(
+                    self,
+                    "{}_{}_conv".format(i + 1, j + 1),
+                    conv3x3(features, features, stride=1, bias=False, spec_norm=spec_norm),
+                )
 
         self.stride = 1
         self.n_blocks = n_blocks
@@ -252,7 +335,7 @@ class RCUBlock(nn.Module):
             residual = x
             for j in range(self.n_stages):
                 x = self.act(x)
-                x = getattr(self, '{}_{}_conv'.format(i + 1, j + 1))(x)
+                x = getattr(self, "{}_{}_conv".format(i + 1, j + 1))(x)
 
             x += residual
         return x
@@ -260,13 +343,30 @@ class RCUBlock(nn.Module):
 
 class CondRCUBlock(nn.Module):
 
-    def __init__(self, features, n_blocks, n_stages, num_classes, normalizer, act=nn.ReLU(), spec_norm=False):
+    def __init__(
+        self,
+        features,
+        n_blocks,
+        n_stages,
+        num_classes,
+        normalizer,
+        act=nn.ReLU(),
+        spec_norm=False,
+    ):
         super().__init__()
 
         for i in range(n_blocks):
             for j in range(n_stages):
-                setattr(self, '{}_{}_norm'.format(i + 1, j + 1), normalizer(features, num_classes, bias=True))
-                setattr(self, '{}_{}_conv'.format(i + 1, j + 1), conv3x3(features, features, stride=1, bias=False, spec_norm=spec_norm))
+                setattr(
+                    self,
+                    "{}_{}_norm".format(i + 1, j + 1),
+                    normalizer(features, num_classes, bias=True),
+                )
+                setattr(
+                    self,
+                    "{}_{}_conv".format(i + 1, j + 1),
+                    conv3x3(features, features, stride=1, bias=False, spec_norm=spec_norm),
+                )
 
         self.stride = 1
         self.n_blocks = n_blocks
@@ -278,9 +378,9 @@ class CondRCUBlock(nn.Module):
         for i in range(self.n_blocks):
             residual = x
             for j in range(self.n_stages):
-                x = getattr(self, '{}_{}_norm'.format(i + 1, j + 1))(x, y)
+                x = getattr(self, "{}_{}_norm".format(i + 1, j + 1))(x, y)
                 x = self.act(x)
-                x = getattr(self, '{}_{}_conv'.format(i + 1, j + 1))(x)
+                x = getattr(self, "{}_{}_conv".format(i + 1, j + 1))(x)
 
             x += residual
         return x
@@ -304,7 +404,7 @@ class MSFBlock(nn.Module):
         sums = torch.zeros(xs[0].shape[0], self.features, *shape, device=xs[0].device)
         for i in range(len(self.convs)):
             h = self.convs[i](xs[i])
-            h = F.interpolate(h, size=shape, mode='bilinear', align_corners=True)
+            h = F.interpolate(h, size=shape, mode="bilinear", align_corners=True)
             sums += h
         return sums
 
@@ -332,14 +432,23 @@ class CondMSFBlock(nn.Module):
         for i in range(len(self.convs)):
             h = self.norms[i](xs[i], y)
             h = self.convs[i](h)
-            h = F.interpolate(h, size=shape, mode='bilinear', align_corners=True)
+            h = F.interpolate(h, size=shape, mode="bilinear", align_corners=True)
             sums += h
         return sums
 
 
 class RefineBlock(nn.Module):
 
-    def __init__(self, in_planes, features, act=nn.ReLU(), start=False, end=False, maxpool=True, spec_norm=False):
+    def __init__(
+        self,
+        in_planes,
+        features,
+        act=nn.ReLU(),
+        start=False,
+        end=False,
+        maxpool=True,
+        spec_norm=False,
+    ):
         super().__init__()
 
         assert isinstance(in_planes, tuple) or isinstance(in_planes, list)
@@ -376,7 +485,17 @@ class RefineBlock(nn.Module):
 
 class CondRefineBlock(nn.Module):
 
-    def __init__(self, in_planes, features, num_classes, normalizer, act=nn.ReLU(), start=False, end=False, spec_norm=False):
+    def __init__(
+        self,
+        in_planes,
+        features,
+        num_classes,
+        normalizer,
+        act=nn.ReLU(),
+        start=False,
+        end=False,
+        spec_norm=False,
+    ):
         super().__init__()
 
         assert isinstance(in_planes, tuple) or isinstance(in_planes, list)
@@ -384,9 +503,27 @@ class CondRefineBlock(nn.Module):
 
         self.adapt_convs = nn.ModuleList()
         for i in range(n_blocks):
-            self.adapt_convs.append(CondRCUBlock(in_planes[i], 2, 2, num_classes, normalizer, act, spec_norm=spec_norm))
+            self.adapt_convs.append(
+                CondRCUBlock(
+                    in_planes[i],
+                    2,
+                    2,
+                    num_classes,
+                    normalizer,
+                    act,
+                    spec_norm=spec_norm,
+                )
+            )
 
-        self.output_convs = CondRCUBlock(features, 3 if end else 1, 2, num_classes, normalizer, act, spec_norm=spec_norm)
+        self.output_convs = CondRCUBlock(
+            features,
+            3 if end else 1,
+            2,
+            num_classes,
+            normalizer,
+            act,
+            spec_norm=spec_norm,
+        )
 
         if not start:
             self.msf = CondMSFBlock(in_planes, features, num_classes, normalizer, spec_norm=spec_norm)
@@ -413,15 +550,37 @@ class CondRefineBlock(nn.Module):
 
 class ConvMeanPool(nn.Module):
 
-    def __init__(self, input_dim, output_dim, kernel_size=3, biases=True, adjust_padding=False, spec_norm=False):
+    def __init__(
+        self,
+        input_dim,
+        output_dim,
+        kernel_size=3,
+        biases=True,
+        adjust_padding=False,
+        spec_norm=False,
+    ):
         super().__init__()
         if not adjust_padding:
-            conv = nn.Conv2d(input_dim, output_dim, kernel_size, stride=1, padding=kernel_size // 2, bias=biases)
+            conv = nn.Conv2d(
+                input_dim,
+                output_dim,
+                kernel_size,
+                stride=1,
+                padding=kernel_size // 2,
+                bias=biases,
+            )
             if spec_norm:
                 conv = spectral_norm(conv)
             self.conv = conv
         else:
-            conv = nn.Conv2d(input_dim, output_dim, kernel_size, stride=1, padding=kernel_size // 2, bias=biases)
+            conv = nn.Conv2d(
+                input_dim,
+                output_dim,
+                kernel_size,
+                stride=1,
+                padding=kernel_size // 2,
+                bias=biases,
+            )
             if spec_norm:
                 conv = spectral_norm(conv)
 
@@ -429,7 +588,17 @@ class ConvMeanPool(nn.Module):
 
     def forward(self, inputs):
         output = self.conv(inputs)
-        output = sum([output[:, :, ::2, ::2], output[:, :, 1::2, ::2], output[:, :, ::2, 1::2], output[:, :, 1::2, 1::2]]) / 4.
+        output = (
+            sum(
+                [
+                    output[:, :, ::2, ::2],
+                    output[:, :, 1::2, ::2],
+                    output[:, :, ::2, 1::2],
+                    output[:, :, 1::2, 1::2],
+                ]
+            )
+            / 4.0
+        )
         return output
 
 
@@ -437,13 +606,30 @@ class MeanPoolConv(nn.Module):
 
     def __init__(self, input_dim, output_dim, kernel_size=3, biases=True, spec_norm=False):
         super().__init__()
-        self.conv = nn.Conv2d(input_dim, output_dim, kernel_size, stride=1, padding=kernel_size // 2, bias=biases)
+        self.conv = nn.Conv2d(
+            input_dim,
+            output_dim,
+            kernel_size,
+            stride=1,
+            padding=kernel_size // 2,
+            bias=biases,
+        )
         if spec_norm:
             self.conv = spectral_norm(self.conv)
 
     def forward(self, inputs):
         output = inputs
-        output = sum([output[:, :, ::2, ::2], output[:, :, 1::2, ::2], output[:, :, ::2, 1::2], output[:, :, 1::2, 1::2]]) / 4.
+        output = (
+            sum(
+                [
+                    output[:, :, ::2, ::2],
+                    output[:, :, 1::2, ::2],
+                    output[:, :, ::2, 1::2],
+                    output[:, :, 1::2, 1::2],
+                ]
+            )
+            / 4.0
+        )
         return self.conv(output)
 
 
@@ -451,7 +637,14 @@ class UpsampleConv(nn.Module):
 
     def __init__(self, input_dim, output_dim, kernel_size=3, biases=True, spec_norm=False):
         super().__init__()
-        self.conv = nn.Conv2d(input_dim, output_dim, kernel_size, stride=1, padding=kernel_size // 2, bias=biases)
+        self.conv = nn.Conv2d(
+            input_dim,
+            output_dim,
+            kernel_size,
+            stride=1,
+            padding=kernel_size // 2,
+            bias=biases,
+        )
         if spec_norm:
             self.conv = spectral_norm(self.conv)
         self.pixelshuffle = nn.PixelShuffle(upscale_factor=2)
@@ -465,23 +658,25 @@ class UpsampleConv(nn.Module):
 
 class ConditionalResidualBlock(nn.Module):
 
-    def __init__(self,
-                 input_dim,
-                 output_dim,
-                 num_classes,
-                 resample=None,
-                 act=nn.ELU(),
-                 normalization=ConditionalBatchNorm2d,
-                 adjust_padding=False,
-                 dilation=None,
-                 spec_norm=False):
+    def __init__(
+        self,
+        input_dim,
+        output_dim,
+        num_classes,
+        resample=None,
+        act=nn.ELU(),
+        normalization=ConditionalBatchNorm2d,
+        adjust_padding=False,
+        dilation=None,
+        spec_norm=False,
+    ):
         super().__init__()
         self.non_linearity = act
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.resample = resample
         self.normalization = normalization
-        if resample == 'down':
+        if resample == "down":
             if dilation is not None:
                 self.conv1 = dilated_conv3x3(input_dim, input_dim, dilation=dilation, spec_norm=spec_norm)
                 self.normalize2 = normalization(input_dim, num_classes)
@@ -490,8 +685,19 @@ class ConditionalResidualBlock(nn.Module):
             else:
                 self.conv1 = conv3x3(input_dim, input_dim, spec_norm=spec_norm)
                 self.normalize2 = normalization(input_dim, num_classes)
-                self.conv2 = ConvMeanPool(input_dim, output_dim, 3, adjust_padding=adjust_padding, spec_norm=spec_norm)
-                conv_shortcut = partial(ConvMeanPool, kernel_size=1, adjust_padding=adjust_padding, spec_norm=spec_norm)
+                self.conv2 = ConvMeanPool(
+                    input_dim,
+                    output_dim,
+                    3,
+                    adjust_padding=adjust_padding,
+                    spec_norm=spec_norm,
+                )
+                conv_shortcut = partial(
+                    ConvMeanPool,
+                    kernel_size=1,
+                    adjust_padding=adjust_padding,
+                    spec_norm=spec_norm,
+                )
 
         elif resample is None:
             if dilation is not None:
@@ -505,7 +711,7 @@ class ConditionalResidualBlock(nn.Module):
                 self.normalize2 = normalization(output_dim, num_classes)
                 self.conv2 = conv3x3(output_dim, output_dim, spec_norm=spec_norm)
         else:
-            raise Exception('invalid resample value')
+            raise Exception("invalid resample value")
 
         if output_dim != input_dim or resample is not None:
             self.shortcut = conv_shortcut(input_dim, output_dim)
@@ -530,22 +736,24 @@ class ConditionalResidualBlock(nn.Module):
 
 class ResidualBlock(nn.Module):
 
-    def __init__(self,
-                 input_dim,
-                 output_dim,
-                 resample=None,
-                 act=nn.ELU(),
-                 normalization=nn.BatchNorm2d,
-                 adjust_padding=False,
-                 dilation=None,
-                 spec_norm=False):
+    def __init__(
+        self,
+        input_dim,
+        output_dim,
+        resample=None,
+        act=nn.ELU(),
+        normalization=nn.BatchNorm2d,
+        adjust_padding=False,
+        dilation=None,
+        spec_norm=False,
+    ):
         super().__init__()
         self.non_linearity = act
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.resample = resample
         self.normalization = normalization
-        if resample == 'down':
+        if resample == "down":
             if dilation is not None:
                 self.conv1 = dilated_conv3x3(input_dim, input_dim, dilation=dilation, spec_norm=spec_norm)
                 self.normalize2 = normalization(input_dim)
@@ -554,8 +762,19 @@ class ResidualBlock(nn.Module):
             else:
                 self.conv1 = conv3x3(input_dim, input_dim, spec_norm=spec_norm)
                 self.normalize2 = normalization(input_dim)
-                self.conv2 = ConvMeanPool(input_dim, output_dim, 3, adjust_padding=adjust_padding, spec_norm=spec_norm)
-                conv_shortcut = partial(ConvMeanPool, kernel_size=1, adjust_padding=adjust_padding, spec_norm=spec_norm)
+                self.conv2 = ConvMeanPool(
+                    input_dim,
+                    output_dim,
+                    3,
+                    adjust_padding=adjust_padding,
+                    spec_norm=spec_norm,
+                )
+                conv_shortcut = partial(
+                    ConvMeanPool,
+                    kernel_size=1,
+                    adjust_padding=adjust_padding,
+                    spec_norm=spec_norm,
+                )
 
         elif resample is None:
             if dilation is not None:
@@ -570,7 +789,7 @@ class ResidualBlock(nn.Module):
                 self.normalize2 = normalization(output_dim)
                 self.conv2 = conv3x3(output_dim, output_dim, spec_norm=spec_norm)
         else:
-            raise Exception('invalid resample value')
+            raise Exception("invalid resample value")
 
         if output_dim != input_dim or resample is not None:
             self.shortcut = conv_shortcut(input_dim, output_dim)
@@ -605,20 +824,20 @@ def get_timestep_embedding(timesteps, embedding_dim, max_positions=10000):
     emb = timesteps.float()[:, None] * emb[None, :]
     emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
     if embedding_dim % 2 == 1:  # zero pad
-        emb = F.pad(emb, (0, 1), mode='constant')
+        emb = F.pad(emb, (0, 1), mode="constant")
     assert emb.shape == (timesteps.shape[0], embedding_dim)
     return emb
 
 
 def _einsum(a, b, c, x, y):
-    einsum_str = '{},{}->{}'.format(''.join(a), ''.join(b), ''.join(c))
+    einsum_str = "{},{}->{}".format("".join(a), "".join(b), "".join(c))
     return torch.einsum(einsum_str, x, y)
 
 
 def contract_inner(x, y):
     """tensordot(x, y, 1)."""
-    x_chars = list(string.ascii_lowercase[:len(x.shape)])
-    y_chars = list(string.ascii_lowercase[len(x.shape):len(y.shape) + len(x.shape)])
+    x_chars = list(string.ascii_lowercase[: len(x.shape)])
+    y_chars = list(string.ascii_lowercase[len(x.shape) : len(y.shape) + len(x.shape)])
     y_chars[0] = x_chars[-1]  # first axis of y and last of x get summed
     out_chars = x_chars[:-1] + y_chars[1:]
     return _einsum(x_chars, y_chars, out_chars, x, y)
@@ -646,7 +865,7 @@ class AttnBlock(nn.Module):
         self.NIN_0 = NIN(channels, channels)
         self.NIN_1 = NIN(channels, channels)
         self.NIN_2 = NIN(channels, channels)
-        self.NIN_3 = NIN(channels, channels, init_scale=0.)
+        self.NIN_3 = NIN(channels, channels, init_scale=0.0)
 
     def forward(self, x):
         B, C, H, W = x.shape
@@ -655,11 +874,11 @@ class AttnBlock(nn.Module):
         k = self.NIN_1(h)
         v = self.NIN_2(h)
 
-        w = torch.einsum('bchw,bcij->bhwij', q, k) * (int(C)**(-0.5))
+        w = torch.einsum("bchw,bcij->bhwij", q, k) * (int(C) ** (-0.5))
         w = torch.reshape(w, (B, H, W, H * W))
         w = F.softmax(w, dim=-1)
         w = torch.reshape(w, (B, H, W, H, W))
-        h = torch.einsum('bhwij,bcij->bchw', w, v)
+        h = torch.einsum("bhwij,bcij->bchw", w, v)
         h = self.NIN_3(h)
         return x + h
 
@@ -674,7 +893,7 @@ class Upsample(nn.Module):
 
     def forward(self, x):
         B, C, H, W = x.shape
-        h = F.interpolate(x, (H * 2, W * 2), mode='nearest')
+        h = F.interpolate(x, (H * 2, W * 2), mode="nearest")
         if self.with_conv:
             h = self.Conv_0(h)
         return h
@@ -718,7 +937,7 @@ class ResnetBlockDDPM(nn.Module):
 
         self.GroupNorm_1 = nn.GroupNorm(num_groups=32, num_channels=out_ch, eps=1e-6)
         self.Dropout_0 = nn.Dropout(dropout)
-        self.Conv_1 = ddpm_conv3x3(out_ch, out_ch, init_scale=0.)
+        self.Conv_1 = ddpm_conv3x3(out_ch, out_ch, init_scale=0.0)
         if in_ch != out_ch:
             if conv_shortcut:
                 self.Conv_2 = ddpm_conv3x3(in_ch, out_ch)

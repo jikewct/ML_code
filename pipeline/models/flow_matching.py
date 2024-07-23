@@ -13,7 +13,7 @@ from . import model_utils
 from .base_model import BaseModel
 from .ema import EMA
 from .model_utils import *
-from .network import ncsnpp, ncsnv2, net_utils
+from .network import ncsnpp, ncsnv2, net_utils, lora_ncsnpp
 
 
 @model_utils.register_model(name="flowMatching")
@@ -33,15 +33,15 @@ class FlowMatching(BaseModel):
         pass
 
     def marginal_std(self, t):
-        return torch.tensor([1.])
+        return torch.tensor([1.0])
 
     @property
     def T(self):
-        return 1.
+        return 1.0
 
     @property
     def CNT_SCALE(self):
-        #return self.num_scales - 1
+        # return self.num_scales - 1
         return 999
 
     @property
@@ -51,12 +51,12 @@ class FlowMatching(BaseModel):
     def forward(self, x, y=None):
 
         b, c, h, w = x.shape
-        t = torch.rand((b, ), device=x.device)
-        #logging.info(x.shape, t.shape)
+        t = torch.rand((b,), device=x.device)
+        # logging.info(x.shape, t.shape)
         x_t, x_0 = self.generate_trajectory_point(x, t)
         speed_vf = x - x_0
         predict_vf, extra_info = self.predict(x_t, t, y)
-        extra_info.update({'t': t, 'noise': x_0})
+        extra_info.update({"t": t, "noise": x_0})
         return predict_vf, speed_vf, extra_info
 
     def generate_trajectory_point(self, x, t):
@@ -85,9 +85,11 @@ class FlowMatching(BaseModel):
         time_steps = np.linspace(self.EPS, self.T, steps)
         step_size = 1 / steps
         x = self.prior_sampling(batch_size, device)
-        for t_index in tqdm.tqdm(range(steps), desc="sampling level", total=steps, leave=False):
-            num_t = t_index/steps *(self.T - self.EPS) + self.EPS
-            t = torch.ones((batch_size, ), device=x.device) * num_t
+        for t_index in tqdm.tqdm(
+            range(steps), desc="sampling level", total=steps, leave=False
+        ):
+            num_t = t_index / steps * (self.T - self.EPS) + self.EPS
+            t = torch.ones((batch_size,), device=x.device) * num_t
             predict_vf, _ = self.predict(x, t, y, use_ema)
             x = x + step_size * predict_vf
         return x.detach()
@@ -96,15 +98,23 @@ class FlowMatching(BaseModel):
     def rk45_sample(self, batch_size, device, y=None, use_ema=True, steps=10):
         x = self.prior_sampling(batch_size, device).detach().clone()
         shape = x.shape
-        solution = integrate.solve_ivp(self.ode_func, (self.EPS, self.T),
-                                       self.to_flattened_numpy(x),
-                                       rtol=self.rtol,
-                                       atol=self.atol,
-                                       method="RK45",
-                                       args=(shape, device))
+        solution = integrate.solve_ivp(
+            self.ode_func,
+            (self.EPS, self.T),
+            self.to_flattened_numpy(x),
+            rtol=self.rtol,
+            atol=self.atol,
+            method="RK45",
+            args=(shape, device),
+        )
         nfe = solution.nfev
         logging.info(f"sample nfe:{nfe}")
-        x = torch.tensor(solution.y[:, -1]).reshape(shape).to(device).type(torch.float32)
+        x = (
+            torch.tensor(solution.y[:, -1])
+            .reshape(shape)
+            .to(device)
+            .type(torch.float32)
+        )
         return x.detach()
 
     def ode_func(self, t, x, shape, device):
@@ -115,4 +125,4 @@ class FlowMatching(BaseModel):
 
     def prior_sampling(self, batch_size, device):
         return torch.randn(batch_size, self.img_channels, *self.img_size, device=device)
-        #return torch.ones(batch_size, self.img_channels, *self.img_size, device=device)
+        # return torch.ones(batch_size, self.img_channels, *self.img_size, device=device)

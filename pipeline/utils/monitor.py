@@ -6,6 +6,32 @@ class RunningAverageMeter(object):
 
     def __init__(
         self,
+        initVal=0,
+    ):
+        self.initVal = initVal
+        self.reset()
+
+    def reset(self):
+        self.sum = 0.0
+        self.count = 0
+        self.val = self.initVal
+        self.avg = 0
+
+    def update(self, val):
+        self.sum += val
+        self.count += 1
+        self.avg = self.sum / self.count
+        self.val = val
+
+    def inc(self, val=1):
+        self.update(self.val + val)
+
+
+class RunningMovingAverageMeter(object):
+    """Computes and stores the average and current value"""
+
+    def __init__(
+        self,
         initVal=None,
         momentum=0.99,
     ):

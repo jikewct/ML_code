@@ -33,7 +33,9 @@ def get_default_configs():
     fast_fid.num_samples = 1000
     fast_fid.batch_size = 64
     fast_fid.save_path = "./data/test/"
-    fast_fid.ds_state_file = "E:\jikewct\Dataset\cifar10\cifar-10-images\\train_fid_stats.npz"
+    fast_fid.ds_state_file = (
+        "E:\jikewct\Dataset\cifar10\cifar-10-images\\train_fid_stats.npz"
+    )
 
     # sampling
     config.sampling = sampling = ml_collections.ConfigDict()
@@ -68,6 +70,7 @@ def get_default_configs():
     data.img_channels = 1
     data.num_classes = 10
     data.root_path = "E:\jikewct\Dataset\mnist"
+    data.img_class = ""
 
     # model
     config.model = model = ml_collections.ConfigDict()
@@ -78,7 +81,7 @@ def get_default_configs():
     model.time_emb_dim = 512
     model.time_emb_scale = 1.0
     model.dropout = 0.1
-    model.attention_resolutions = (1, )
+    model.attention_resolutions = (1,)
     model.norm = "gn"
     model.num_groups = 32
     model.channel_mults = (1, 2)
@@ -93,6 +96,7 @@ def get_default_configs():
 
     model.use_labels = False
     model.embedding_type = "fourier"
+    model.load_ckpt_strict = False
 
     # optimization
     config.optim = optim = ml_collections.ConfigDict()
@@ -108,6 +112,8 @@ def get_default_configs():
     optim.amsgrad = False
 
     config.seed = 42
-    config.device = (torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu"))
+    config.device = (
+        torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+    )
     config.pipeline = ""
     return config

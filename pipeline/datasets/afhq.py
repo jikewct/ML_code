@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Callable, Dict, List, Tuple
 import torch
 import torchvision.transforms as tforms
@@ -29,14 +30,12 @@ class Afhq(datasets.ImageFolder):
                 root= root + "/val/",
                 transform=resize_trans(img_size),
                 img_class= img_class
-
             )
         else:
             train_dataset = Afhq(
                 root=root + "/train/" ,
                 transform=resize_trans(img_size),
                 img_class= img_class
-
                 # transform=script_utils.get_transform(),
             )
 
@@ -46,6 +45,7 @@ class Afhq(datasets.ImageFolder):
                 img_class= img_class
                 # transform=script_utils.get_transform(),
             )
+        logging.info(f"train images num:{len(train_dataset)}, val images num:{len(val_dataset)}, dataset path:{root}")
 
         train_loader = DataLoader(
             train_dataset,

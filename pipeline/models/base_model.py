@@ -41,6 +41,8 @@ class BaseModel(ABC):
         self.sampling_log_freq = config.sampling.log_freq
         self.debug_groups = config.training.debug_groups
         self.enable_debug = config.training.enable_debug
+        self.enable_lora = any(config.model.enable_lora)
+        self.load_ckpt_strict = config.model.load_ckpt_strict
         self.debug_sampling_save_path = config.test.save_path + "/debug_sampling"
         self.loss_group_metric = monitor.HistogramMeter("loss")
         self.mmoe_weight1_metric = monitor.HistogramMeter("mmoe_w1")
@@ -80,9 +82,21 @@ class BaseModel(ABC):
 
     def load_checkpoint(self, filepath):
         state_dict = torch.load(filepath)
-        self.network.load_state_dict(state_dict)
+        strict = True
+        if self.load_ckpt_strict:
+            strict = True
+        elif self.enable_lora:
+            strict = False
+        self.network.load_state_dict(state_dict, strict)
         if self.enable_ema:
-            self.ema_network.load_state_dict(state_dict)
+            self.ema_network.load_state_dict(state_dict, strict)
+        if self.enable_lora:
+            net_utils.mark_only_lora_as_trainable(self.network)
+            for name, p in list(self.network.named_parameters()):
+                if p.requires_grad:
+                    logging.debug(
+                        f"parameter: {name} grad:{p.requires_grad}, shape:{p.shape}"
+                    )
 
     def set_train_mode(self):
         self.mode = ModeEnum.TRAIN
@@ -108,7 +122,8 @@ class BaseModel(ABC):
         return self.network
 
     def update_ema(self):
-        if not self.enable_ema: return
+        if not self.enable_ema:
+            return
         self.step += 1
         if self.step % self.ema_update_rate == 0:
             if self.step < self.ema_start:
@@ -119,7 +134,7 @@ class BaseModel(ABC):
     def extract(self, a, t, x_shape):
         b, *_ = t.shape
         out = a.gather(-1, t)
-        return out.reshape(b, *((1, ) * (len(x_shape) - 1)))
+        return out.reshape(b, *((1,) * (len(x_shape) - 1)))
 
     def predict(self, x, t, y=None, use_ema=False):
         if use_ema and self.enable_ema:
@@ -143,7 +158,7 @@ class BaseModel(ABC):
         return losses.mean()
 
     def l2_loss(self, preds, targets):
-        losses = 1 / 2 * ((preds - targets)**2).sum(dim=1)
+        losses = 1 / 2 * ((preds - targets) ** 2).sum(dim=1)
         return losses
 
     @abstractmethod
@@ -166,16 +181,16 @@ class BaseModel(ABC):
     def get_groups(self, t):
         interval = self.T / self.debug_groups
         groups = torch.div(t, interval, rounding_mode="trunc")
-        #groups = (t // interval).long()
+        # groups = (t // interval).long()
         return groups
 
     @torch.no_grad()
     def aggregate_info_by_group(self, loss, info):
-        t = info['t']
+        t = info["t"]
         groups = self.get_groups(t)
         if "time_gate_softmax" in info:
-            w1 = info['time_gate_softmax'][:, 0]
-            w2 = info['time_gate_softmax'][:, 1]
+            w1 = info["time_gate_softmax"][:, 0]
+            w2 = info["time_gate_softmax"][:, 1]
             self.mmoe_weight1_metric.add_metric_with_group(w1, groups)
             self.mmoe_weight2_metric.add_metric_with_group(w2, groups)
         self.loss_group_metric.add_metric_with_group(loss, groups)
@@ -190,7 +205,12 @@ class BaseModel(ABC):
 
     def debug_sampling(self, x, t, preds, extra_info):
         self.debug_sampling_step.inc()
-        if not self.enable_debug_sampling or not self.log_to_wandb or self.mode != ModeEnum.SAMPLING or self.debug_sampling_step.val % self.sampling_log_freq != 0:
+        if (
+            not self.enable_debug_sampling
+            or not self.log_to_wandb
+            or self.mode != ModeEnum.SAMPLING
+            or self.debug_sampling_step.val % self.sampling_log_freq != 0
+        ):
             return
         assert x.shape[0] > 0
         x_0, preds_0, sigma = x[0], preds[0], self.marginal_std(t)[0]
@@ -204,21 +224,34 @@ class BaseModel(ABC):
             "x_min": x_min,
             "preds_norm": preds_0_norm,
             "expected_norm": expected_norm,
-            "sampling_step": self.debug_sampling_step.val
+            "sampling_step": self.debug_sampling_step.val,
         }
         if "log" in extra_info.keys():
             sampling_info.update(extra_info["log"])
 
         cvt_x = torch.clone(x_0)
-        cvt_x = ((cvt_x - x_min) / (x_max - x_min + 1e-6) * 255).permute(1, 2, 0).detach().cpu().numpy()
+        cvt_x = (
+            ((cvt_x - x_min) / (x_max - x_min + 1e-6) * 255)
+            .permute(1, 2, 0)
+            .detach()
+            .cpu()
+            .numpy()
+        )
         cvt_x = np.squeeze(cvt_x.round().astype(np.uint8))
 
         if self.log_to_wandb:
             wandb.log(sampling_info)
-            #if self.debug_sampling_step.val % (self.sampling_log_freq * 10) == 0:
-            wandb.log({"debug_sampling": wandb.Image(cvt_x), "sampling_step": self.debug_sampling_step.val})
+            # if self.debug_sampling_step.val % (self.sampling_log_freq * 10) == 0:
+            wandb.log(
+                {
+                    "debug_sampling": wandb.Image(cvt_x),
+                    "sampling_step": self.debug_sampling_step.val,
+                }
+            )
         os.makedirs(self.debug_sampling_save_path, exist_ok=True)
-        save_filename = "{}/{:08d}.jpg".format(self.debug_sampling_save_path, self.debug_sampling_step.val)
+        save_filename = "{}/{:08d}.jpg".format(
+            self.debug_sampling_save_path, self.debug_sampling_step.val
+        )
         imageio.imwrite(save_filename, cvt_x)
         logging.debug(sampling_info)
 
@@ -227,7 +260,7 @@ class BaseModel(ABC):
 
     def to_flattened_numpy(self, x):
         """Flatten a torch tensor `x` and convert it to numpy."""
-        return x.detach().cpu().numpy().reshape((-1, ))
+        return x.detach().cpu().numpy().reshape((-1,))
 
     def from_flattened_numpy(self, x, shape):
         """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""

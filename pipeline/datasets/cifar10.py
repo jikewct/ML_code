@@ -1,3 +1,4 @@
+import logging
 import torch
 import torchvision.transforms as tforms
 from torch.utils.data import DataLoader
@@ -26,7 +27,7 @@ class Cifar10:
             transform=trans,
             # transform=script_utils.get_transform(),
         )
-
+        logging.info(f"train images num:{len(train_dataset)}, test images num:{len(test_dataset)}, dataset path:{root}")
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,

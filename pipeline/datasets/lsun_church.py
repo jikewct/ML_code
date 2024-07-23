@@ -1,3 +1,4 @@
+import logging
 import torch
 import torchvision.transforms as tforms
 from torch.utils.data import DataLoader
@@ -18,12 +19,13 @@ class Lsun:
             # transform=script_utils.get_transform(),
         )
 
-        test_dataset = datasets.LSUN(
+        val_dataset = datasets.LSUN(
             root=root,
             classes=["church_outdoor_val"],
             transform=resize_trans(img_size),
             # transform=script_utils.get_transform(),
         )
+        logging.info(f"train images num:{len(train_dataset)}, val images num:{len(val_dataset)}, dataset path:{root}")
 
         train_loader = DataLoader(
             train_dataset,
@@ -32,7 +34,7 @@ class Lsun:
             drop_last=True,
         )
         test_loader = DataLoader(
-            test_dataset,
+            val_dataset,
             batch_size=batch_size,
             drop_last=True,
         )

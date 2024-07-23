@@ -1,3 +1,4 @@
+import logging
 import torch
 import torchvision.transforms as tforms
 from torch.utils.data import DataLoader
@@ -26,7 +27,7 @@ class Mnist:
             transform=trans,
             # transform=script_utils.get_transform(),
         )
-
+        logging.info(f"train images num:{len(train_dataset)}, val images num:{len(val_dataset)}, dataset path:{root}")
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,

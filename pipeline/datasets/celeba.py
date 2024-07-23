@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Callable, Dict, List, Tuple
 import torch
 import torchvision.transforms as tforms
@@ -42,6 +43,7 @@ class CelebA(datasets.ImageFolder):
             transform=resize_trans(img_size),
             # transform=script_utils.get_transform(),
         )
+        logging.info(f"train images num:{len(train_dataset)}, val images num:{len(val_dataset)}, dataset path:{root}")
 
         train_loader = DataLoader(
             train_dataset,

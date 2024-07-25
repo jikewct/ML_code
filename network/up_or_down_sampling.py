@@ -12,7 +12,7 @@ from .op import upfirdn2d
 
 
 # Function ported from StyleGAN2
-def get_weight(module, shape, weight_var='weight', kernel_init=None):
+def get_weight(module, shape, weight_var="weight", kernel_init=None):
     """Get/create weight tensor for a convolution or fully-connected layer."""
 
     return module.param(weight_var, kernel_init, shape)
@@ -67,27 +67,27 @@ def naive_downsample_2d(x, factor=2):
 def upsample_conv_2d(x, w, k=None, factor=2, gain=1):
     """Fused `upsample_2d()` followed by `tf.nn.conv2d()`.
 
-     Padding is performed only once at the beginning, not between the
-     operations.
-     The fused op is considerably more efficient than performing the same
-     calculation
-     using standard TensorFlow ops. It supports gradients of arbitrary order.
-     Args:
-       x:            Input tensor of the shape `[N, C, H, W]` or `[N, H, W,
-         C]`.
-       w:            Weight tensor of the shape `[filterH, filterW, inChannels,
-         outChannels]`. Grouped convolution can be performed by `inChannels =
-         x.shape[0] // numGroups`.
-       k:            FIR filter of the shape `[firH, firW]` or `[firN]`
-         (separable). The default is `[1] * factor`, which corresponds to
-         nearest-neighbor upsampling.
-       factor:       Integer upsampling factor (default: 2).
-       gain:         Scaling factor for signal magnitude (default: 1.0).
+    Padding is performed only once at the beginning, not between the
+    operations.
+    The fused op is considerably more efficient than performing the same
+    calculation
+    using standard TensorFlow ops. It supports gradients of arbitrary order.
+    Args:
+      x:            Input tensor of the shape `[N, C, H, W]` or `[N, H, W,
+        C]`.
+      w:            Weight tensor of the shape `[filterH, filterW, inChannels,
+        outChannels]`. Grouped convolution can be performed by `inChannels =
+        x.shape[0] // numGroups`.
+      k:            FIR filter of the shape `[firH, firW]` or `[firN]`
+        (separable). The default is `[1] * factor`, which corresponds to
+        nearest-neighbor upsampling.
+      factor:       Integer upsampling factor (default: 2).
+      gain:         Scaling factor for signal magnitude (default: 1.0).
 
-     Returns:
-       Tensor of the shape `[N, C, H * factor, W * factor]` or
-       `[N, H * factor, W * factor, C]`, and same datatype as `x`.
-  """
+    Returns:
+      Tensor of the shape `[N, C, H * factor, W * factor]` or
+      `[N, H * factor, W * factor, C]`, and same datatype as `x`.
+    """
 
     assert isinstance(factor, int) and factor >= 1
 
@@ -156,7 +156,7 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1):
     Returns:
         Tensor of the shape `[N, C, H // factor, W // factor]` or
         `[N, H // factor, W // factor, C]`, and same datatype as `x`.
-  """
+    """
 
     assert isinstance(factor, int) and factor >= 1
     _outC, _inC, convH, convW = w.shape
@@ -206,7 +206,7 @@ def upsample_2d(x, k=None, factor=2, gain=1):
 
     Returns:
         Tensor of the shape `[N, C, H * factor, W * factor]`
-  """
+    """
     assert isinstance(factor, int) and factor >= 1
     if k is None:
         k = [1] * factor
@@ -237,7 +237,7 @@ def downsample_2d(x, k=None, factor=2, gain=1):
 
     Returns:
         Tensor of the shape `[N, C, H // factor, W // factor]`
-  """
+    """
 
     assert isinstance(factor, int) and factor >= 1
     if k is None:

@@ -22,22 +22,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from . import layers, layerspp, net_utils, normalization, lora_layers
+from . import layers, layerspp, net_utils, normalization
 
 ResnetBlockDDPM = layerspp.ResnetBlockDDPMpp
 ResnetBlockBigGAN = layerspp.ResnetBlockBigGANpp
-LoraResnetBlockBigGAN = layerspp.LoRAResnetBlockBigGANpp
-
 Combine = layerspp.Combine
-conv3x3 = layers.ddpm_conv3x3
-lora_conv3x3 = layers.lora_ddpm_conv3x3
+conv3x3 = layerspp.conv3x3
 conv1x1 = layerspp.conv1x1
 get_act = layers.get_act
 # get_normalization = normalization.get_normalization
-default_initializer = layers.default_init
+default_initializer = net_utils.default_init
 
 
-@net_utils.register_network(name="lora_ncsnpp")
+@net_utils.register_network(name="ncsnpp")
 class NCSNpp(nn.Module):
     """NCSN++ model"""
 
@@ -65,10 +62,7 @@ class NCSNpp(nn.Module):
         self.progressive_input = progressive_input = config.model.progressive_input.lower()
         self.embedding_type = embedding_type = config.model.embedding_type.lower()
         init_scale = config.model.init_scale
-        self.lora_dim = config.model.lora_dim
-        self.lora_alpha = config.model.lora_alpha
-        self.lora_dropout = config.model.lora_dropout
-        self.enable_lora = config.model.enable_lora
+        self.grad_checkpoint = config.model.grad_checkpoint
         assert progressive in ["none", "output_skip", "residual"]
         assert progressive_input in ["none", "input_skip", "residual"]
         assert embedding_type in ["fourier", "positional"]
@@ -91,55 +85,23 @@ class NCSNpp(nn.Module):
             raise ValueError(f"embedding type {embedding_type} unknown.")
 
         if conditional:
-            modules.append(
-                lora_layers.LoRAMergedLinear(
-                    embed_dim,
-                    nf * 4,
-                    self.lora_dim,
-                    self.lora_alpha,
-                    self.lora_dropout,
-                    self.enable_lora,
-                    fan_in_fan_out=False,
-                    merge_weights=False,
-                )
-            )
+            modules.append(nn.Linear(embed_dim, nf * 4))
             modules[-1].weight.data = default_initializer()(modules[-1].weight.shape)
             nn.init.zeros_(modules[-1].bias)
-            modules.append(
-                lora_layers.LoRAMergedLinear(
-                    nf * 4,
-                    nf * 4,
-                    self.lora_dim,
-                    self.lora_alpha,
-                    self.lora_dropout,
-                    self.enable_lora,
-                    fan_in_fan_out=False,
-                    merge_weights=False,
-                )
-            )
+            modules.append(nn.Linear(nf * 4, nf * 4))
             modules[-1].weight.data = default_initializer()(modules[-1].weight.shape)
             nn.init.zeros_(modules[-1].bias)
 
         AttnBlock = functools.partial(layerspp.AttnBlockpp, init_scale=init_scale, skip_rescale=skip_rescale)
 
-        Upsample = functools.partial(
-            layerspp.Upsample,
-            with_conv=resamp_with_conv,
-            fir=fir,
-            fir_kernel=fir_kernel,
-        )
+        Upsample = functools.partial(layerspp.Upsample, with_conv=resamp_with_conv, fir=fir, fir_kernel=fir_kernel)
 
         if progressive == "output_skip":
             self.pyramid_upsample = layerspp.Upsample(fir=fir, fir_kernel=fir_kernel, with_conv=False)
         elif progressive == "residual":
             pyramid_upsample = functools.partial(layerspp.Upsample, fir=fir, fir_kernel=fir_kernel, with_conv=True)
 
-        Downsample = functools.partial(
-            layerspp.Downsample,
-            with_conv=resamp_with_conv,
-            fir=fir,
-            fir_kernel=fir_kernel,
-        )
+        Downsample = functools.partial(layerspp.Downsample, with_conv=resamp_with_conv, fir=fir, fir_kernel=fir_kernel)
 
         if progressive_input == "input_skip":
             self.pyramid_downsample = layerspp.Downsample(fir=fir, fir_kernel=fir_kernel, with_conv=False)
@@ -148,12 +110,7 @@ class NCSNpp(nn.Module):
 
         if resblock_type == "ddpm":
             ResnetBlock = functools.partial(
-                ResnetBlockDDPM,
-                act=act,
-                dropout=dropout,
-                init_scale=init_scale,
-                skip_rescale=skip_rescale,
-                temb_dim=nf * 4,
+                ResnetBlockDDPM, act=act, dropout=dropout, init_scale=init_scale, skip_rescale=skip_rescale, temb_dim=nf * 4
             )
 
         elif resblock_type == "biggan":
@@ -166,23 +123,12 @@ class NCSNpp(nn.Module):
                 init_scale=init_scale,
                 skip_rescale=skip_rescale,
                 temb_dim=nf * 4,
+                grad_checkpoint=self.grad_checkpoint,
             )
 
         else:
             raise ValueError(f"resblock type {resblock_type} unrecognized.")
-        LoraResnetBlock = functools.partial(
-            LoraResnetBlockBigGAN,
-            act=act,
-            dropout=dropout,
-            fir=fir,
-            fir_kernel=fir_kernel,
-            init_scale=init_scale,
-            skip_rescale=skip_rescale,
-            temb_dim=nf * 4,
-            r=self.lora_dim,
-            lora_alpha=self.lora_alpha,
-            merge_weights=True,
-        )
+
         # Downsampling block
 
         channels = config.data.img_channels
@@ -224,18 +170,14 @@ class NCSNpp(nn.Module):
         in_ch = hs_c[-1]
         modules.append(ResnetBlock(in_ch=in_ch))
         modules.append(AttnBlock(channels=in_ch))
-        modules.append(LoraResnetBlock(in_ch=in_ch))
+        modules.append(ResnetBlock(in_ch=in_ch))
 
         pyramid_ch = 0
         # Upsampling block
         for i_level in reversed(range(num_resolutions)):
             for i_block in range(num_res_blocks + 1):
                 out_ch = nf * ch_mult[i_level]
-                if i_block % 2 == 0:
-                    modules.append(ResnetBlock(in_ch=in_ch + hs_c.pop(), out_ch=out_ch))
-                else:
-                    modules.append(LoraResnetBlock(in_ch=in_ch + hs_c.pop(), out_ch=out_ch))
-
+                modules.append(ResnetBlock(in_ch=in_ch + hs_c.pop(), out_ch=out_ch))
                 in_ch = out_ch
 
             if all_resolutions[i_level] in attn_resolutions:
@@ -244,48 +186,19 @@ class NCSNpp(nn.Module):
             if progressive != "none":
                 if i_level == num_resolutions - 1:
                     if progressive == "output_skip":
-                        modules.append(
-                            nn.GroupNorm(
-                                num_groups=min(in_ch // 4, 32),
-                                num_channels=in_ch,
-                                eps=1e-6,
-                            )
-                        )
+                        modules.append(nn.GroupNorm(num_groups=min(in_ch // 4, 32), num_channels=in_ch, eps=1e-6))
                         modules.append(conv3x3(in_ch, channels, init_scale=init_scale))
                         pyramid_ch = channels
                     elif progressive == "residual":
-                        modules.append(
-                            nn.GroupNorm(
-                                num_groups=min(in_ch // 4, 32),
-                                num_channels=in_ch,
-                                eps=1e-6,
-                            )
-                        )
+                        modules.append(nn.GroupNorm(num_groups=min(in_ch // 4, 32), num_channels=in_ch, eps=1e-6))
                         modules.append(conv3x3(in_ch, in_ch, bias=True))
                         pyramid_ch = in_ch
                     else:
                         raise ValueError(f"{progressive} is not a valid name.")
                 else:
                     if progressive == "output_skip":
-                        modules.append(
-                            nn.GroupNorm(
-                                num_groups=min(in_ch // 4, 32),
-                                num_channels=in_ch,
-                                eps=1e-6,
-                            )
-                        )
-                        modules.append(
-                            lora_conv3x3(
-                                in_ch,
-                                channels,
-                                bias=True,
-                                init_scale=init_scale,
-                                r=self.lora_dim,
-                                lora_alpha=self.lora_alpha,
-                                lora_dropout=self.lora_dropout,
-                                merge_weights=True,
-                            )
-                        )
+                        modules.append(nn.GroupNorm(num_groups=min(in_ch // 4, 32), num_channels=in_ch, eps=1e-6))
+                        modules.append(conv3x3(in_ch, channels, bias=True, init_scale=init_scale))
                         pyramid_ch = channels
                     elif progressive == "residual":
                         modules.append(pyramid_upsample(in_ch=pyramid_ch, out_ch=in_ch))
@@ -324,7 +237,7 @@ class NCSNpp(nn.Module):
             # Sinusoidal positional embeddings.
             timesteps = time_cond
             used_sigmas = self.sigmas[time_cond.long()]
-            temb = layers.get_timestep_embedding(timesteps, self.nf)
+            temb = net_utils.get_timestep_embedding(timesteps, self.nf)
 
         else:
             raise ValueError(f"embedding type {self.embedding_type} unknown.")
@@ -351,6 +264,7 @@ class NCSNpp(nn.Module):
         for i_level in range(self.num_resolutions):
             # Residual blocks for this resolution
             for i_block in range(self.num_res_blocks):
+                # logging.info(f"{hs[-1].requires_grad}, {temb.requires_grad}")
                 h = modules[m_idx](hs[-1], temb)
                 m_idx += 1
                 if h.shape[-1] in self.attn_resolutions:

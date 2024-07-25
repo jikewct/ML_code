@@ -10,12 +10,13 @@ import torch.nn.functional as F
 import tqdm
 import wandb
 
-from ..utils import monitor
-from . import model_utils
+from network import ncsnv2, net_utils
+from utils import monitor
+
+from . import model_factory, model_utils
 from .base_model import BaseModel
 from .ema import EMA
-from .model_utils import ModeEnum
-from .network import ncsnv2, net_utils
+
 """
     0   --------> T
     x   --------> noise
@@ -44,7 +45,7 @@ class SDE(BaseModel):
 
     @property
     def T(self):
-        return 1.
+        return 1.0
 
     @property
     def CNT_SCALE(self):
@@ -88,7 +89,7 @@ class SDE(BaseModel):
     def reverse(self, probability_flow=False):
         fsde = self
 
-        class RSDE():
+        class RSDE:
 
             def __init__(self):
                 self.fsde = fsde
@@ -110,21 +111,21 @@ class SDE(BaseModel):
                 sigma = self.fsde.marginal_prob(x, t)[1][0]
                 drift, diffusion = self.fsde.sde(x, t)
                 score, extra_info = self.fsde.predict(x, t, y, use_ema)
-                diffusion_coef = 0.5 if self.ode else 1.
-                drift = drift - diffusion[:, None, None, None]**2 * score * diffusion_coef
+                diffusion_coef = 0.5 if self.ode else 1.0
+                drift = drift - diffusion[:, None, None, None] ** 2 * score * diffusion_coef
                 diffusion = 0 if self.ode else diffusion
                 ###debug sampling
                 expected_norm = self.fsde.cal_pred_and_expected_norm(sigma)
-                extra_info.update({'log': {'sigma': sigma}})
-                #self.fsde.debug_sampling(x, score, extra_info, expected_norm)
+                extra_info.update({"log": {"sigma": sigma}})
+                # self.fsde.debug_sampling(x, score, extra_info, expected_norm)
 
                 return drift, diffusion
 
             def discretize(self, x, t, y=None, use_ema=True):
                 f, G = self.fsde.discretize(x, t)
                 score, _ = self.fsde.predict(x, t, y=None, use_ema=True)
-                G_coef = 0.5 if self.ode else 1.
-                rev_f = f - G[:, None, None, None]**2 * score * G_coef
+                G_coef = 0.5 if self.ode else 1.0
+                rev_f = f - G[:, None, None, None] ** 2 * score * G_coef
                 rev_G = torch.zeros_like(G) if self.ode else G
                 return rev_f, rev_G
 
@@ -132,9 +133,9 @@ class SDE(BaseModel):
 
     def generate_t(self, batch_size, device):
 
-        t = torch.rand((batch_size, ), device=device) * (self.T - self.EPS) + self.EPS
-        #if self.continuous: return t
-        #t = self.timesteps[self.convert_t_cnt2dct(t)]
+        t = torch.rand((batch_size,), device=device) * (self.T - self.EPS) + self.EPS
+        # if self.continuous: return t
+        # t = self.timesteps[self.convert_t_cnt2dct(t)]
         return t
 
     def cal_target_score(self, x, x_t, t):
@@ -144,14 +145,14 @@ class SDE(BaseModel):
 
         b, c, h, w = x.shape
         t = self.generate_t(b, x.device)
-        #logging.info(x.shape, t.shape)
+        # logging.info(x.shape, t.shape)
 
         noise = torch.randn_like(x)
         mean, std = self.marginal_prob(x, t)
         perturbed_x = mean + std[:, None, None, None] * noise
         scores, extra_info = self.predict(perturbed_x, t, y)
         scores = scores * std[:, None, None, None]
-        extra_info.update({'t': t, 'noise': noise})
+        extra_info.update({"t": t, "noise": noise})
         return scores, -noise, extra_info
 
     def convert_predict_t(self, t):
@@ -176,7 +177,7 @@ class SDE(BaseModel):
         preds, extra_info = super().predict(x, cvt_t, y, use_ema)
         preds = self.post_predict(x, preds, t, y)
 
-        if self.mode == ModeEnum.SAMPLING and debug_sampling:
+        if self.mode == model_utils.ModeEnum.SAMPLING and debug_sampling:
             self.debug_sampling(x, t, preds, extra_info)
         return preds, extra_info
 
@@ -204,7 +205,7 @@ class SDE(BaseModel):
             noise = torch.randn_like(x)
             grad_norm = torch.norm(grad.reshape(grad.shape[0], -1), dim=1).mean()
             noise_norm = torch.norm(noise.reshape(noise.shape[0], -1), dim=1).mean()
-            step_size = (self.snr * noise_norm / grad_norm)**2 * 2 * self.get_alpha(t)
+            step_size = (self.snr * noise_norm / grad_norm) ** 2 * 2 * self.get_alpha(t)
             x_mean = x + step_size[:, None, None, None] * grad
             x = x_mean + noise * torch.sqrt(2 * step_size)[:, None, None, None]
         return x, x_mean
@@ -214,7 +215,7 @@ class SDE(BaseModel):
             grad, _ = self.predict(x, t, y, use_ema)
             noise = torch.randn_like(x)
             std = self.marginal_prob(x, t)[1]
-            step_size = (self.snr * std)**2 * 2 * self.get_alpha(t)
+            step_size = (self.snr * std) ** 2 * 2 * self.get_alpha(t)
             x_mean = x + step_size[:, None, None, None] * grad
             x = x_mean + noise * torch.sqrt(2 * step_size)[:, None, None, None]
         return x, x_mean
@@ -278,7 +279,7 @@ class SDE(BaseModel):
         return x
 
 
-@model_utils.register_model(name="vesde")
+@model_factory.register_model(name="vesde")
 class VESDE(SDE):
 
     def __init__(self, config):
@@ -317,7 +318,7 @@ class VESDE(SDE):
     def prior_logp(self, z):
         shape = z.shape
         N = np.prod(shape[1:])
-        return -N / 2. * np.log(2 * np.pi * self.sigma_max**2) - torch.sum(z**2, dim=(1, 2, 3)) / (2 * self.sigma_max**2)
+        return -N / 2.0 * np.log(2 * np.pi * self.sigma_max**2) - torch.sum(z**2, dim=(1, 2, 3)) / (2 * self.sigma_max**2)
 
     def discretize(self, x, t):
         t_step = self.convert_t_cnt2dct(t)
@@ -345,7 +346,7 @@ class VESDE(SDE):
         return preds
 
 
-@model_utils.register_model(name="vpsde")
+@model_factory.register_model(name="vpsde")
 class VPSDE(SDE):
 
     def __init__(self, config):
@@ -357,7 +358,7 @@ class VPSDE(SDE):
         self.beta_min = config.model.beta_min
         self.beta_max = config.model.beta_max
         self.betas = self.generate_betas_schedule(config).to(config.device)
-        self.alphas = 1. - self.betas
+        self.alphas = 1.0 - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
         self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
         self.sqrt_1m_alphas_cumprod = torch.sqrt(1 - self.alphas_cumprod)
@@ -380,7 +381,7 @@ class VPSDE(SDE):
     def generate_cosine_schedule(self, T, s=0.008):
 
         def f(t, T):
-            return (np.cos((t / T + s) / (1 + s) * np.pi / 2))**2
+            return (np.cos((t / T + s) / (1 + s) * np.pi / 2)) ** 2
 
         alphas = []
         f0 = f(0, T)
@@ -401,7 +402,7 @@ class VPSDE(SDE):
         return self.alphas[(t * (self.N - 1) / self.T).long()]
 
     def cal_expected_norm(self, sigma):
-        return super().cal_pred_and_expected_norm(1.)
+        return super().cal_pred_and_expected_norm(1.0)
 
     def sde(self, x, t):
         beta_t = self.beta_min + t * (self.beta_max - self.beta_min)
@@ -415,7 +416,7 @@ class VPSDE(SDE):
     def marginal_prob(self, x, t):
         log_mean_coeff = -0.25 * t**2 * (self.beta_max - self.beta_min) - 0.5 * t * self.beta_min
         mean = torch.exp(log_mean_coeff[:, None, None, None]) * x
-        std = torch.sqrt(1. - torch.exp(2. * log_mean_coeff))
+        std = torch.sqrt(1.0 - torch.exp(2.0 * log_mean_coeff))
         return mean, std
 
     def prior_sampling(self, batch_size, device):
@@ -425,7 +426,7 @@ class VPSDE(SDE):
     def prior_logp(self, z):
         shape = z.shape
         N = np.prod(shape[1:])
-        return -N / 2. * np.log(2 * np.pi) - torch.sum(z**2, dim=(1, 2, 3)) / 2.
+        return -N / 2.0 * np.log(2 * np.pi) - torch.sum(z**2, dim=(1, 2, 3)) / 2.0
 
     def discretize(self, x, t):
         t_step = self.convert_t_cnt2dct(t)

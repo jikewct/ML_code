@@ -15,35 +15,11 @@
 """All functions and modules related to model definition.
 """
 
+from abc import ABC
 from enum import Enum
 
 import numpy as np
 import torch
-
-_MODELS = {}
-
-
-def register_model(cls=None, *, name=None):
-    """A decorator for registering model classes."""
-
-    def _register(cls):
-        if name is None:
-            local_name = cls.__name__
-        else:
-            local_name = name
-        if local_name in _MODELS:
-            raise ValueError(f'Already registered model with name: {local_name}')
-        _MODELS[local_name] = cls
-        return cls
-
-    if cls is None:
-        return _register
-    else:
-        return _register(cls)
-
-
-def get_model(name):
-    return _MODELS[name]
 
 
 def get_ddpm_params(config):
@@ -54,30 +30,21 @@ def get_ddpm_params(config):
     beta_end = config.model.beta_max / config.model.num_scales
     betas = np.linspace(beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64)
 
-    alphas = 1. - betas
+    alphas = 1.0 - betas
     alphas_cumprod = np.cumprod(alphas, axis=0)
     sqrt_alphas_cumprod = np.sqrt(alphas_cumprod)
-    sqrt_1m_alphas_cumprod = np.sqrt(1. - alphas_cumprod)
+    sqrt_1m_alphas_cumprod = np.sqrt(1.0 - alphas_cumprod)
 
     return {
-        'betas': betas,
-        'alphas': alphas,
-        'alphas_cumprod': alphas_cumprod,
-        'sqrt_alphas_cumprod': sqrt_alphas_cumprod,
-        'sqrt_1m_alphas_cumprod': sqrt_1m_alphas_cumprod,
-        'beta_min': beta_start * (num_diffusion_timesteps - 1),
-        'beta_max': beta_end * (num_diffusion_timesteps - 1),
-        'num_diffusion_timesteps': num_diffusion_timesteps
+        "betas": betas,
+        "alphas": alphas,
+        "alphas_cumprod": alphas_cumprod,
+        "sqrt_alphas_cumprod": sqrt_alphas_cumprod,
+        "sqrt_1m_alphas_cumprod": sqrt_1m_alphas_cumprod,
+        "beta_min": beta_start * (num_diffusion_timesteps - 1),
+        "beta_max": beta_end * (num_diffusion_timesteps - 1),
+        "num_diffusion_timesteps": num_diffusion_timesteps,
     }
-
-
-def create_model(config):
-    """Create  model."""
-    model_name = config.model.name
-    model = get_model(model_name)(config)
-    #score_model = score_model.to(config.device)
-    #score_model = torch.nn.DataParallel(score_model)
-    return model
 
 
 # 定义一个枚举类

@@ -6,10 +6,11 @@ import numpy as np
 import torch
 import wandb
 
+from models import *
+from models.ddpm import DDPM
+from utils import monitor
+
 from .ddpm_pipeline import DDPMPipeLine
-from .models import model_utils
-from .models.ddpm import DDPM
-from .utils import monitor
 
 __all__ = ["DDIMPipeLine"]
 

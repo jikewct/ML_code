@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 import math
 from typing import Optional, List
+from . import net_utils
 
 
 class LoRALayer:
@@ -177,13 +178,7 @@ class LoRAMergedLinear(nn.Linear, LoRALayer):
         **kwargs
     ):
         nn.Linear.__init__(self, in_features, out_features, **kwargs)
-        LoRALayer.__init__(
-            self,
-            r=r,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            merge_weights=merge_weights,
-        )
+        LoRALayer.__init__(self, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=merge_weights)
         assert out_features % len(enable_lora) == 0, "The length of enable_lora must divide out_features"
         self.enable_lora = enable_lora
         self.fan_in_fan_out = fan_in_fan_out
@@ -256,6 +251,57 @@ class LoRAMergedLinear(nn.Linear, LoRALayer):
             if self.r > 0:
                 result += self.lora_dropout(x) @ T(self.merge_AB().T) * self.scaling
             return result
+
+
+class LoRANIN(nn.Module, LoRALayer):
+
+    def __init__(self, in_dim, num_units, init_scale=0.1, r=0, lora_alpha=1, lora_dropout=0.0, merge_weights=True):
+        super(LoRANIN, self).__init__()
+        LoRALayer.__init__(self, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=merge_weights)
+        self.W = nn.Parameter(net_utils.default_init(scale=init_scale)((in_dim, num_units)), requires_grad=False)
+        self.b = nn.Parameter(torch.zeros(num_units), requires_grad=False)
+        self.merge_weights = merge_weights
+        if r > 0:
+            self.lora_A = nn.Parameter(self.W.new_zeros((r, in_dim)))
+            self.lora_B = nn.Parameter(self.W.new_zeros((num_units, r)))  # weights for Conv1D with groups=sum(enable_lora)
+            self.scaling = self.lora_alpha / self.r
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        if hasattr(self, "lora_A"):
+            # initialize A the same way as the default for nn.Linear and B to zero
+            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
+            nn.init.zeros_(self.lora_B)
+
+    def merge_AB(self):
+
+        delta_w = F.conv1d(
+            self.lora_A.unsqueeze(0),
+            self.lora_B.unsqueeze(-1),
+        ).squeeze(0)
+        return delta_w
+
+    def train(self, mode: bool = True):
+        if mode:
+            if self.merge_weights and self.merged:
+                # Make sure that the weights are not merged
+                if self.r > 0:
+                    self.W.data -= self.merge_AB() * self.scaling
+                self.merged = False
+        else:
+            if self.merge_weights and not self.merged:
+                # Merge the weights and mark it
+                if self.r > 0:
+                    self.W.data += self.merge_AB() * self.scaling
+                self.merged = True
+
+    def forward(self, x):
+        x = x.permute(0, 2, 3, 1)
+        y = net_utils.contract_inner(x, self.W) + self.b
+        if not self.merged and self.r > 0:
+            y += net_utils.contract_inner(self.lora_dropout(x), self.merge_AB().T) * self.scaling
+        return y.permute(0, 3, 1, 2)
 
 
 # class ConvLoRA(nn.Module, LoRALayer):

@@ -11,12 +11,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
 import wandb
+from accelerate import Accelerator
 
-from ..utils import monitor
+from network import ncsnv2, net_utils
+from utils import monitor
+
 from . import model_utils
 from .ema import EMA
-from .model_utils import ModeEnum
-from .network import ncsnv2, net_utils
 
 
 class BaseModel(ABC):
@@ -34,7 +35,7 @@ class BaseModel(ABC):
         self.num_classes = config.data.num_classes
         self.loss_type = config.model.loss_type
         self.log_to_wandb = config.training.log_to_wandb
-        self.mode = ModeEnum.TRAIN
+        self.mode = model_utils.ModeEnum.TRAIN
 
     def init_debug_info(self, config):
         self.enable_debug_sampling = config.sampling.enable_debug
@@ -43,6 +44,7 @@ class BaseModel(ABC):
         self.enable_debug = config.training.enable_debug
         self.enable_lora = any(config.model.enable_lora)
         self.load_ckpt_strict = config.model.load_ckpt_strict
+        self.lora_bias_trainable = config.model.lora_bias_trainable
         self.debug_sampling_save_path = config.test.save_path + "/debug_sampling"
         self.loss_group_metric = monitor.HistogramMeter("loss")
         self.mmoe_weight1_metric = monitor.HistogramMeter("mmoe_w1")
@@ -66,6 +68,11 @@ class BaseModel(ABC):
         self.ema_start = config.model.ema_start
         self.ema_update_rate = config.model.ema_update_rate
         self.ema_network = deepcopy(self.network)
+
+    def accelerator_prepare(self, accelerator: Accelerator):
+        self.network = accelerator.prepare(self.network)
+        if self.enable_ema:
+            self.ema_network = accelerator.prepare(self.ema_network)
 
     @abstractmethod
     def init_coefficient(self, config):
@@ -91,32 +98,30 @@ class BaseModel(ABC):
         if self.enable_ema:
             self.ema_network.load_state_dict(state_dict, strict)
         if self.enable_lora:
-            net_utils.mark_only_lora_as_trainable(self.network)
+            net_utils.mark_only_lora_as_trainable(self.network, bias=self.lora_bias_trainable)
             for name, p in list(self.network.named_parameters()):
                 if p.requires_grad:
-                    logging.debug(
-                        f"parameter: {name} grad:{p.requires_grad}, shape:{p.shape}"
-                    )
+                    logging.debug(f"parameter: {name} grad:{p.requires_grad}, shape:{p.shape}")
 
     def set_train_mode(self):
-        self.mode = ModeEnum.TRAIN
+        self.mode = model_utils.ModeEnum.TRAIN
         self.network.train()
         if self.enable_ema:
             self.ema_network.train()
 
     def set_eval_mode(self):
-        self.mode = ModeEnum.EVAL
+        self.mode = model_utils.ModeEnum.EVAL
         self.network.eval()
         if self.enable_ema:
             self.ema_network.eval()
 
     def set_sampling_mode(self):
         self.set_eval_mode()
-        self.mode = ModeEnum.SAMPLING
+        self.mode = model_utils.ModeEnum.SAMPLING
 
     def set_test_mode(self):
         self.set_eval_mode()
-        self.mode = ModeEnum.TEST
+        self.mode = model_utils.ModeEnum.TEST
 
     def get_network(self):
         return self.network
@@ -208,7 +213,7 @@ class BaseModel(ABC):
         if (
             not self.enable_debug_sampling
             or not self.log_to_wandb
-            or self.mode != ModeEnum.SAMPLING
+            or self.mode != model_utils.ModeEnum.SAMPLING
             or self.debug_sampling_step.val % self.sampling_log_freq != 0
         ):
             return
@@ -230,13 +235,7 @@ class BaseModel(ABC):
             sampling_info.update(extra_info["log"])
 
         cvt_x = torch.clone(x_0)
-        cvt_x = (
-            ((cvt_x - x_min) / (x_max - x_min + 1e-6) * 255)
-            .permute(1, 2, 0)
-            .detach()
-            .cpu()
-            .numpy()
-        )
+        cvt_x = ((cvt_x - x_min) / (x_max - x_min + 1e-6) * 255).permute(1, 2, 0).detach().cpu().numpy()
         cvt_x = np.squeeze(cvt_x.round().astype(np.uint8))
 
         if self.log_to_wandb:
@@ -249,9 +248,7 @@ class BaseModel(ABC):
                 }
             )
         os.makedirs(self.debug_sampling_save_path, exist_ok=True)
-        save_filename = "{}/{:08d}.jpg".format(
-            self.debug_sampling_save_path, self.debug_sampling_step.val
-        )
+        save_filename = "{}/{:08d}.jpg".format(self.debug_sampling_save_path, self.debug_sampling_step.val)
         imageio.imwrite(save_filename, cvt_x)
         logging.debug(sampling_info)
 

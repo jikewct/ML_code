@@ -29,8 +29,8 @@ def get_config():
     fast_fid = config.fast_fid
     optim = config.optim
     test = config.test
-    #training.model_checkpoint = "./data/checkpoints/generative_model/flowMatching/unet-cifar10-65000-model"
-    #training.optim_checkpoint = ".\data\checkpoints\ddpm-cifar10-81000-optim.pth"
+    training.model_checkpoint = "./data/checkpoints/generative_model/flowMatching/unet-cifar10-65000-model"
+    # training.optim_checkpoint = ".\data\checkpoints\ddpm-cifar10-81000-optim.pth"
 
     model = config.model
     model.channel_mults = (1, 2, 2, 2)
@@ -40,8 +40,14 @@ def get_config():
     model.sigma_max = 50
     model.sigma_min = 0.01
     model.num_scales = 1000
-    #model.norm = "gn"
-    #model.activation = "elu"
+    model.lora_dim = 4
+    model.lora_alpha = 4
+    model.lora_dropout = 0.0
+    model.enable_lora = [True]
+    model.load_ckpt_strict = False
+    model.grad_checkpoint = True
+    # model.norm = "gn"
+    # model.activation = "elu"
 
     training.batch_size = 32
     training.epochs = 100

@@ -9,14 +9,14 @@ import torch.nn.functional as F
 import tqdm
 from scipy import integrate
 
-from . import model_utils
+from network import lora_ncsnpp, ncsnpp, ncsnv2, net_utils
+
+from . import model_factory, model_utils
 from .base_model import BaseModel
 from .ema import EMA
-from .model_utils import *
-from .network import ncsnpp, ncsnv2, net_utils, lora_ncsnpp
 
 
-@model_utils.register_model(name="flowMatching")
+@model_factory.register_model(name="flowMatching")
 class FlowMatching(BaseModel):
 
     def __init__(self, config):
@@ -68,7 +68,7 @@ class FlowMatching(BaseModel):
     def predict(self, x, t, y=None, use_ema=False):
         scaled_t = t * self.CNT_SCALE
         speed_vf, extra_info = super().predict(x, scaled_t, y, use_ema)
-        if self.mode == ModeEnum.SAMPLING:
+        if self.mode == model_utils.ModeEnum.SAMPLING:
             self.debug_sampling(x, t, speed_vf, extra_info)
         return speed_vf, extra_info
 
@@ -85,9 +85,7 @@ class FlowMatching(BaseModel):
         time_steps = np.linspace(self.EPS, self.T, steps)
         step_size = 1 / steps
         x = self.prior_sampling(batch_size, device)
-        for t_index in tqdm.tqdm(
-            range(steps), desc="sampling level", total=steps, leave=False
-        ):
+        for t_index in tqdm.tqdm(range(steps), desc="sampling level", total=steps, leave=False):
             num_t = t_index / steps * (self.T - self.EPS) + self.EPS
             t = torch.ones((batch_size,), device=x.device) * num_t
             predict_vf, _ = self.predict(x, t, y, use_ema)
@@ -109,12 +107,7 @@ class FlowMatching(BaseModel):
         )
         nfe = solution.nfev
         logging.info(f"sample nfe:{nfe}")
-        x = (
-            torch.tensor(solution.y[:, -1])
-            .reshape(shape)
-            .to(device)
-            .type(torch.float32)
-        )
+        x = torch.tensor(solution.y[:, -1]).reshape(shape).to(device).type(torch.float32)
         return x.detach()
 
     def ode_func(self, t, x, shape, device):

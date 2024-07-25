@@ -8,10 +8,11 @@ import torch
 import tqdm
 import wandb
 
+from models import *
+from models.ddpm import DDPM
+from utils import monitor
+
 from .base_pipeline import BasePipeLine
-from .models import model_utils
-from .models.ddpm import DDPM
-from .utils import monitor
 
 __all__ = ["DDPMPipeLine"]
 
@@ -25,10 +26,7 @@ class DDPMPipeLine(BasePipeLine):
         super().init_optimizer()
         if self.config.optim.lr_schedule == "MultiStepLR":
             decay_num = self.config.optim.decay_num
-            decay_epochs = (
-                self.config.training.epochs
-                * (1 - 1 / np.power(decay_num, np.arange(decay_num) + 1))
-            ).astype(np.uint)
+            decay_epochs = (self.config.training.epochs * (1 - 1 / np.power(decay_num, np.arange(decay_num) + 1))).astype(np.uint)
             self.step_lr = torch.optim.lr_scheduler.MultiStepLR(
                 self.optimizer,
                 milestones=decay_epochs.tolist(),

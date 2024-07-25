@@ -101,7 +101,13 @@ def get_default_configs():
 
     model.embedding_type = "fourier"
     model.ode = False
+    model.lora_dim = 4
+    model.lora_alpha = 4
+    model.lora_dropout = 0.0
+    model.enable_lora = [True]
     model.load_ckpt_strict = False
+    model.grad_checkpoint = True
+    model.lora_bias_trainable = "all"
 
     # optimization
     config.optim = optim = ml_collections.ConfigDict()
@@ -117,8 +123,6 @@ def get_default_configs():
     optim.amsgrad = False
 
     config.seed = 42
-    config.device = (
-        torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-    )
+    config.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     config.pipeline = ""
     return config

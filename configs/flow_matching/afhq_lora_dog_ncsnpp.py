@@ -29,13 +29,13 @@ def get_config():
     optim = config.optim
     test = config.test
 
-    training.model_checkpoint = "./data/checkpoints/generative_model/flowMatching/lora_ncsnpp-afhq-24000-model"
+    training.model_checkpoint = "./data/checkpoints/generative_model/flowMatching/lora_ncsnpp-afhq-66000-model"
     # training.model_checkpoint = "/home/jikewct/public/jikewct/Model/rect_flow/CelebA-HQ-Pytorch_model_ema.pth"
     training.continuous = False
-    training.batch_size = 32
+    training.batch_size = 64
     training.epochs = 1000
-    training.snapshot_freq = 2000
-    training.log_freq = 100
+    training.snapshot_freq = 1000
+    training.log_freq = 20
     training.eval_freq = 1000
     training.test_metric_freq = 100000
 
@@ -51,12 +51,7 @@ def get_config():
     model.norm = "GroupNorm"
     model.activation = "swish"
     model.nf = 128
-    model.channel_mults = (
-        1,
-        1,
-        2,
-        2,
-    )
+    model.channel_mults = (1, 1, 2, 2)
     model.num_res_blocks = 2
     model.attention_resolutions = (8,)
     model.resamp_with_conv = True
@@ -79,11 +74,8 @@ def get_config():
     model.sigma_min = 0.01
     model.num_scales = 1000
 
-    model.lora_dim = 32
-    model.lora_alpha = 32
-    model.lora_dropout = 0.0
-    model.enable_lora = [True]
-
+    # none, all, lora_only
+    model.lora_bias_trainable = "all"
     data.category = "church_outdoor_train"
     data.img_size = (64, 64)
     data.img_class = "dog"
@@ -104,7 +96,7 @@ def get_config():
     sampling.atol = 1e-3
     sampling.method = "rk45"
 
-    optim.lr = 1e-4
+    optim.lr = 1e-5
     config.pipeline = "FlowMatchingPipeLine"
 
     return config

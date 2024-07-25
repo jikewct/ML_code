@@ -9,12 +9,12 @@ import pytorch_fid
 import pytorch_fid.fid_score
 import torch
 import wandb
+from accelerate import Accelerator
 from torch import Tensor, optim
 
-from .datasets import datasetsHelper
-from .models import *
-from .models import model_utils
-from .utils import monitor
+from datasets import datasetsHelper
+from models import *
+from utils import monitor
 
 
 class BasePipeLine(ABC):
@@ -27,13 +27,16 @@ class BasePipeLine(ABC):
         self.load_checkpoint()
 
     def init_parameters(self, config):
+        self.accelerator = Accelerator()
+        config.device = self.accelerator.device
+        logging.info(f"device:{config.device}")
         self.config = config
         self.device = self.config.device
         self.use_labels = self.config.model.use_labels
         self.sample_steps = self.config.sampling.sample_steps
 
     def init_model(self):
-        self.model = model_utils.create_model(self.config)
+        self.model = model_factory.create_model(self.config)
 
     def init_data_loader(self):
 
@@ -58,15 +61,16 @@ class BasePipeLine(ABC):
                 eps=config.optim.eps,
             )
         elif config.optim.optimizer == "RMSProp":
-            self.optimizer = optim.RMSprop(
-                parameters, lr=config.optim.lr, weight_decay=config.optim.weight_decay
-            )
+            self.optimizer = optim.RMSprop(parameters, lr=config.optim.lr, weight_decay=config.optim.weight_decay)
         elif config.optim.optimizer == "SGD":
             self.optimizer = optim.SGD(parameters, lr=config.optim.lr, momentum=0.9)
         else:
-            raise NotImplementedError(
-                "Optimizer {} not understood.".format(config.optim.optimizer)
-            )
+            raise NotImplementedError("Optimizer {} not understood.".format(config.optim.optimizer))
+
+    def accelerator_prepare(self):
+        self.train_loader, self.test_loader = self.accelerator.prepare(self.train_loader, self.test_loader)
+        self.optimizer = self.accelerator.prepare(self.optimizer)
+        self.model.accelerator_prepare(self.accelerator)
 
     def init_metrics(self):
         self.current_epoch = monitor.RunningAverageMeter(0)
@@ -92,7 +96,7 @@ class BasePipeLine(ABC):
     def save_checkpoint(self):
         filepath = f"{self.config.training.ckpt_dir}/{self.config.training.project_name}/{self.config.model.name}/{self.config.model.nn_name}-{self.config.data.dataset}-{self.current_step.val}-model"
         os.makedirs(os.path.split(filepath)[0], exist_ok=True)
-        self.set_eval_mode()  ## for lora model to split parameters
+        self.set_train_mode()  ## for lora model to split parameters
         self.model.save_checkpoint(filepath)
         logging.info(f"save model checkpoint success! {filepath}")
 
@@ -103,6 +107,7 @@ class BasePipeLine(ABC):
             self.before_epoch()
             # for  train step
             for x, y in self.train_loader:
+                # logging.info(f"x dtype:{x.dtype}, y dtype:{y.dtype}")
                 self.before_step()
                 train_step_loss = self.step_train(x, y)
                 self.train_loss.update(train_step_loss.item())
@@ -113,10 +118,7 @@ class BasePipeLine(ABC):
 
     def before_step(self):
         self.set_train_mode()
-        if (
-            self.current_step.val == 0
-            or self.current_step.val % self.config.training.log_freq == 1
-        ):
+        if self.current_step.val == 0 or self.current_step.val % self.config.training.log_freq == 1:
             self.log_time_meter.start()
 
     def after_step(self):
@@ -128,10 +130,7 @@ class BasePipeLine(ABC):
             self.eval_loop()
         if step % self.config.training.snapshot_freq == 0:
             self.save_checkpoint()
-        if (
-            step > self.config.fast_fid.begin_step
-            and step % self.config.training.test_metric_freq == 0
-        ):
+        if step > self.config.fast_fid.begin_step and step % self.config.training.test_metric_freq == 0:
             self.test_metric_loop()
         self.current_step.inc()
 
@@ -150,17 +149,11 @@ class BasePipeLine(ABC):
         sample_num = self.config.fast_fid.num_samples
         batch_size = self.config.fast_fid.batch_size
         ds_state_file = self.config.fast_fid.ds_state_file
-        save_path = "{}/fast_fid/{}/".format(
-            self.config.fast_fid.save_path, int(time.time())
-        )
+        save_path = "{}/fast_fid/{}/".format(self.config.fast_fid.save_path, int(time.time()))
         self.generate_samples(batch_size, sample_num, save_path, "test fid")
         paths = [ds_state_file, save_path]
-        fid_score = pytorch_fid.fid_score.calculate_fid_given_paths(
-            paths, 50, self.device, 2048
-        )
-        logging.info(
-            f"fid score:{fid_score}, train steps: {self.current_step.val}, image path:{save_path}"
-        )
+        fid_score = pytorch_fid.fid_score.calculate_fid_given_paths(paths, 50, self.device, 2048)
+        logging.info(f"fid score:{fid_score}, train steps: {self.current_step.val}, image path:{save_path}")
         if self.config.training.log_to_wandb:
             wandb.log(
                 {
@@ -171,9 +164,7 @@ class BasePipeLine(ABC):
 
     def generate_samples(self, batch_size, sample_num, save_path, desc=""):
         self.test_time_meter.start()
-        logging.info(
-            f"==================begin {desc} generate samples ======================="
-        )
+        logging.info(f"==================begin {desc} generate samples =======================")
         self.before_eval()
         batch_size_list = np.concatenate(
             [
@@ -182,20 +173,12 @@ class BasePipeLine(ABC):
             ]
         )
         batch_size_list = np.delete(batch_size_list, np.where(batch_size_list == 0))
-        for iter, num in tqdm.tqdm(
-            enumerate(batch_size_list), desc="Processing", total=len(batch_size_list)
-        ):
+        for iter, num in tqdm.tqdm(enumerate(batch_size_list), desc="Processing", total=len(batch_size_list)):
             test_samples = self.sample(num, steps=self.sample_steps)
             self.save_result(test_samples, iter * batch_size, save_path)
         self.test_time_meter.stop()
-        logging.info(
-            "generate {} samples, time cost:{:.2f} seconds, save_path:{}".format(
-                sample_num, self.test_time_meter.interval(), save_path
-            )
-        )
-        logging.info(
-            f"==================end {desc} generate samples ======================="
-        )
+        logging.info("generate {} samples, time cost:{:.2f} seconds, save_path:{}".format(sample_num, self.test_time_meter.interval(), save_path))
+        logging.info(f"==================end {desc} generate samples =======================")
 
     def log_eval_status(self):
         debug_info = self.model.get_debug_info()
@@ -266,7 +249,7 @@ class BasePipeLine(ABC):
             loss = self.model(x)
 
         self.optimizer.zero_grad()
-        loss.backward()
+        self.accelerator.backward(loss)
         self.optimizer.step()
         self.model.update_ema()
         return loss
@@ -311,6 +294,7 @@ class BasePipeLine(ABC):
 
     def before_train(self):
         self.init_data_loader()
+        self.accelerator_prepare()
         self.init_metrics()
 
     def after_train(self):

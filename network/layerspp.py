@@ -16,18 +16,22 @@
 # pylint: skip-file
 """Layers for defining NCSN++.
 """
+import logging
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils
+import torch.utils.checkpoint
 
-from . import layers, up_or_down_sampling
+from . import layers, lora_layers, net_utils, up_or_down_sampling
 
 conv1x1 = layers.ddpm_conv1x1
 conv3x3 = layers.ddpm_conv3x3
 lora_conv3x3 = layers.lora_ddpm_conv3x3
 NIN = layers.NIN
-default_init = layers.default_init
+default_init = net_utils.default_init
 
 
 class GaussianFourierProjection(nn.Module):
@@ -70,6 +74,39 @@ class AttnBlockpp(nn.Module):
         self.NIN_1 = NIN(channels, channels)
         self.NIN_2 = NIN(channels, channels)
         self.NIN_3 = NIN(channels, channels, init_scale=init_scale)
+        self.skip_rescale = skip_rescale
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        h = self.GroupNorm_0(x)
+        q = self.NIN_0(h)
+        k = self.NIN_1(h)
+        v = self.NIN_2(h)
+
+        w = torch.einsum("bchw,bcij->bhwij", q, k) * (int(C) ** (-0.5))
+        w = torch.reshape(w, (B, H, W, H * W))
+        w = F.softmax(w, dim=-1)
+        w = torch.reshape(w, (B, H, W, H, W))
+        h = torch.einsum("bhwij,bcij->bchw", w, v)
+        h = self.NIN_3(h)
+        if not self.skip_rescale:
+            return x + h
+        else:
+            return (x + h) / np.sqrt(2.0)
+
+
+class LoRAAttnBlockpp(nn.Module):
+    """Channel-wise self-attention block. Modified from DDPM."""
+
+    def __init__(self, channels, skip_rescale=False, init_scale=0.0, r=0, lora_alpha=0, lora_dropout=0, merge_weights=True):
+        super().__init__()
+        self.GroupNorm_0 = nn.GroupNorm(num_groups=min(channels // 4, 32), num_channels=channels, eps=1e-6)
+        self.NIN_0 = lora_layers.LoRANIN(channels, channels, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=merge_weights)
+        self.NIN_1 = lora_layers.LoRANIN(channels, channels, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=merge_weights)
+        self.NIN_2 = lora_layers.LoRANIN(channels, channels, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=merge_weights)
+        self.NIN_3 = lora_layers.LoRANIN(
+            channels, channels, init_scale=init_scale, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=merge_weights
+        )
         self.skip_rescale = skip_rescale
 
     def forward(self, x):
@@ -255,6 +292,7 @@ class ResnetBlockBigGANpp(nn.Module):
         fir_kernel=(1, 3, 3, 1),
         skip_rescale=True,
         init_scale=0.0,
+        grad_checkpoint=False,
     ):
         super().__init__()
 
@@ -264,7 +302,7 @@ class ResnetBlockBigGANpp(nn.Module):
         self.down = down
         self.fir = fir
         self.fir_kernel = fir_kernel
-
+        self.grad_checkpoint = grad_checkpoint
         self.Conv_0 = conv3x3(in_ch, out_ch)
         if temb_dim is not None:
             self.Dense_0 = nn.Linear(temb_dim, out_ch)
@@ -283,6 +321,11 @@ class ResnetBlockBigGANpp(nn.Module):
         self.out_ch = out_ch
 
     def forward(self, x, temb=None):
+        if self.grad_checkpoint and self.training:
+            return torch.utils.checkpoint.checkpoint(self._forward, x, temb)
+        return self._forward(x, temb)
+
+    def _forward(self, x, temb=None):
         h = self.act(self.GroupNorm_0(x))
 
         if self.up:
@@ -336,6 +379,7 @@ class LoRAResnetBlockBigGANpp(nn.Module):
         lora_alpha=1,
         lora_dropout=0.0,
         merge_weights=True,
+        grad_checkpoint=False,
     ):
         super().__init__()
 
@@ -345,7 +389,7 @@ class LoRAResnetBlockBigGANpp(nn.Module):
         self.down = down
         self.fir = fir
         self.fir_kernel = fir_kernel
-
+        self.grad_checkpoint = grad_checkpoint
         self.Conv_0 = lora_conv3x3(
             in_ch,
             out_ch,
@@ -379,6 +423,11 @@ class LoRAResnetBlockBigGANpp(nn.Module):
         self.out_ch = out_ch
 
     def forward(self, x, temb=None):
+        if self.grad_checkpoint and self.training:
+            return torch.utils.checkpoint.checkpoint(self._forward, x, temb)
+        return self._forward(x, temb)
+
+    def _forward(self, x, temb=None):
         h = self.act(self.GroupNorm_0(x))
 
         if self.up:

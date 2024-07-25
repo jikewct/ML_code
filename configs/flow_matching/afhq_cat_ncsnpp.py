@@ -29,17 +29,15 @@ def get_config():
     optim = config.optim
     test = config.test
 
-    training.model_checkpoint = (
-        "./data/checkpoints/generative_model/flowMatching/ncsnpp-afhq-31000-model"
-    )
+    # training.model_checkpoint = "./data/checkpoints/generative_model/flowMatching/ncsnpp-afhq-31000-model"
     # training.model_checkpoint = "/home/jikewct/public/jikewct/Model/rect_flow/CelebA-HQ-Pytorch_model_ema.pth"
     training.continuous = False
-    training.batch_size = 16
+    training.batch_size = 32
     training.epochs = 100
-    training.snapshot_freq = 4000
-    training.log_freq = 100
-    training.eval_freq = 4000
-    training.test_metric_freq = 100000
+    training.snapshot_freq = 1000
+    training.log_freq = 20
+    training.eval_freq = 500
+    training.test_metric_freq = 10000
 
     model.name = "flowMatching"
     model.nn_name = "ncsnpp"
@@ -53,14 +51,9 @@ def get_config():
     model.norm = "GroupNorm"
     model.activation = "swish"
     model.nf = 128
-    model.channel_mults = (
-        1,
-        1,
-        2,
-        2,
-    )
+    model.channel_mults = (1, 1, 2, 2, 2)
     model.num_res_blocks = 2
-    model.attention_resolutions = (8,)
+    model.attention_resolutions = (16,)
     model.resamp_with_conv = True
     model.conditional = True
     model.fir = True
@@ -75,6 +68,7 @@ def get_config():
     model.embedding_type = "fourier"
     model.fourier_scale = 16
     model.conv_size = 3
+    model.grad_checkpoint = True
 
     model.sigma_dist = "geometric"
     model.sigma_max = 50
@@ -82,7 +76,7 @@ def get_config():
     model.num_scales = 1000
 
     data.category = "church_outdoor_train"
-    data.img_size = (64, 64)
+    data.img_size = (128, 128)
     data.img_class = "cat"
 
     test.save_path = "./data/test/"

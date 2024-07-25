@@ -8,14 +8,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
 
-from . import model_utils
+from network import net_utils, official_ddpm_unet, unet
+
+from . import model_factory, model_utils
 from .base_model import BaseModel
 from .ema import EMA
-from .model_utils import *
-from .network import net_utils, official_ddpm_unet, unet
 
 
-@model_utils.register_model(name="ddpm")
+@model_factory.register_model(name="ddpm")
 class DDPM(BaseModel):
 
     def __init__(self, config):
@@ -38,16 +38,16 @@ class DDPM(BaseModel):
         # alpha_t_bar
         self.alphas_cumprod = to_torch(alphas_cumprod)
         # sqrt(1/alpha_t_bar)
-        self.sqrt_recip_alphas_cumprod = to_torch(np.sqrt(1. / alphas_cumprod))
+        self.sqrt_recip_alphas_cumprod = to_torch(np.sqrt(1.0 / alphas_cumprod))
         # sqrt(alpha_t_bar)
         self.sqrt_alphas_cumprod = to_torch(np.sqrt(alphas_cumprod))
         # sqrt(1/alpha_t_bar -1)
-        self.sqrt_recipm1_alphas_cumprod = to_torch(np.sqrt(1. / alphas_cumprod - 1))
-        #posterior_mean_coef1
-        posterior_mean_coef1 = betas * np.sqrt(alphas_cumprod_prev) / (1. - alphas_cumprod)
+        self.sqrt_recipm1_alphas_cumprod = to_torch(np.sqrt(1.0 / alphas_cumprod - 1))
+        # posterior_mean_coef1
+        posterior_mean_coef1 = betas * np.sqrt(alphas_cumprod_prev) / (1.0 - alphas_cumprod)
         self.posterior_mean_coef1 = to_torch(posterior_mean_coef1)
         # posterior_mean_coef2
-        posterior_mean_coef2 = (1. - alphas_cumprod_prev) * np.sqrt(alphas) / (1. - alphas_cumprod)
+        posterior_mean_coef2 = (1.0 - alphas_cumprod_prev) * np.sqrt(alphas) / (1.0 - alphas_cumprod)
         self.posterior_mean_coef2 = to_torch(posterior_mean_coef2)
         self.sqrt_one_minus_alphas_cumprod = to_torch(np.sqrt(1 - alphas_cumprod))
         self.reciprocal_sqrt_alphas = to_torch(np.sqrt(1 / alphas))
@@ -73,7 +73,7 @@ class DDPM(BaseModel):
     def generate_cosine_schedule(self, T, s=0.008):
 
         def f(t, T):
-            return (np.cos((t / T + s) / (1 + s) * np.pi / 2))**2
+            return (np.cos((t / T + s) / (1 + s) * np.pi / 2)) ** 2
 
         alphas = []
         f0 = f(0, T)
@@ -112,11 +112,11 @@ class DDPM(BaseModel):
         if w != self.img_size[0]:
             raise ValueError("image width does not match diffusion parameters")
 
-        t = torch.randint(0, len(self.betas), (b, ), device=device)
+        t = torch.randint(0, len(self.betas), (b,), device=device)
         noise = torch.randn_like(x)
         perturbed_x = self.perturb_x(x, t, noise)
         estimated_noise, extra_info = self.predict(perturbed_x, t, y)
-        extra_info.update({'t': t, 'noise': noise})
+        extra_info.update({"t": t, "noise": noise})
         return estimated_noise, noise, extra_info
 
     def prior_sampling(self, batch_size, device):
@@ -127,7 +127,7 @@ class DDPM(BaseModel):
 
     def predict(self, x, t, y=None, use_ema=False):
         preds, extra_info = super().predict(x, t, y, use_ema)
-        if self.mode == ModeEnum.SAMPLING:
+        if self.mode == model_utils.ModeEnum.SAMPLING:
             self.debug_sampling(x, t, preds, extra_info)
         return preds, extra_info
 
@@ -138,26 +138,29 @@ class DDPM(BaseModel):
         model_output, extra_info = self.predict(x, t_batch, y, use_ema)
 
         # predict clipped x_0
-        pred_x_0 = (self.extract(self.sqrt_recip_alphas_cumprod, t_batch, x.shape) * x -
-                    self.extract(self.sqrt_recipm1_alphas_cumprod, t_batch, x.shape) * model_output)
+        pred_x_0 = (
+            self.extract(self.sqrt_recip_alphas_cumprod, t_batch, x.shape) * x
+            - self.extract(self.sqrt_recipm1_alphas_cumprod, t_batch, x.shape) * model_output
+        )
         pred_x_0 = torch.clamp(pred_x_0, -1, 1)
 
-        x_minus_one = (self.extract(self.posterior_mean_coef1, t_batch, x.shape) * pred_x_0 +
-                       self.extract(self.posterior_mean_coef2, t_batch, x.shape) * x)
+        x_minus_one = (
+            self.extract(self.posterior_mean_coef1, t_batch, x.shape) * pred_x_0 + self.extract(self.posterior_mean_coef2, t_batch, x.shape) * x
+        )
         if scalar_t > 0:
             x_minus_one += self.extract(self.posterior_variance, t_batch, x.shape) * torch.randn_like(x)
 
         return x_minus_one
 
     def cal_expected_norm(self, sigma):
-        return super().cal_expected_norm(1.)
+        return super().cal_expected_norm(1.0)
 
     @torch.no_grad()
     def sample(self, batch_size, device, y=None, use_ema=True, steps=1000):
         if y is not None and batch_size != len(y):
             raise ValueError("sample batch size different from length of given y")
 
-        #logging.info(batch_size, self.img_channels, self.img_size)
+        # logging.info(batch_size, self.img_channels, self.img_size)
         x = self.prior_sampling(batch_size, device)
 
         for t in tqdm.tqdm(range(steps - 1, -1, -1), desc="sampling", total=steps, leave=False):

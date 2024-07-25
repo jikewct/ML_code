@@ -8,10 +8,11 @@ import torch
 import tqdm
 import wandb
 
+from models import model_utils
+from models.ddpm import DDPM
+from utils import monitor
+
 from .base_pipeline import BasePipeLine
-from .models import model_utils
-from .models.ddpm import DDPM
-from .utils import monitor
 
 __all__ = ["FlowMatchingPipeLine"]
 

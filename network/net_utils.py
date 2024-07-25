@@ -15,13 +15,21 @@
 """All functions and modules related to model definition.
 """
 
+import logging
+import math
+import string
 from typing import Dict
+
 import numpy as np
 import torch
 import torch.nn as nn
-from .lora_layers import LoRALayer
+import torch.nn.functional as F
 
 _NETS = {}
+
+
+class LoRALayer:
+    pass
 
 
 def register_network(cls=None, *, name=None):
@@ -55,7 +63,7 @@ def create_network(config):
     num_params = 0
     for p in net.parameters():
         num_params += p.numel()
-    print("Number of Parameters in the Score Model:", num_params)
+    logging.info(f"Number of Parameters in the Model:{num_params}")
 
     # score_model = torch.nn.DataParallel(score_model)
     return net
@@ -118,9 +126,7 @@ def lora_state_dict(model: nn.Module, bias: str = "none") -> Dict[str, torch.Ten
     if bias == "none":
         return {k: my_state_dict[k] for k in my_state_dict if "lora_" in k}
     elif bias == "all":
-        return {
-            k: my_state_dict[k] for k in my_state_dict if "lora_" in k or "bias" in k
-        }
+        return {k: my_state_dict[k] for k in my_state_dict if "lora_" in k or "bias" in k}
     elif bias == "lora_only":
         to_return = {}
         for k in my_state_dict:
@@ -132,3 +138,70 @@ def lora_state_dict(model: nn.Module, bias: str = "none") -> Dict[str, torch.Ten
         return to_return
     else:
         raise NotImplementedError
+
+
+def get_timestep_embedding(timesteps, embedding_dim, max_positions=10000):
+    assert len(timesteps.shape) == 1  # and timesteps.dtype == tf.int32
+    half_dim = embedding_dim // 2
+    # magic number 10000 is from transformers
+    emb = math.log(max_positions) / (half_dim - 1)
+    # emb = math.log(2.) / (half_dim - 1)
+    emb = torch.exp(torch.arange(half_dim, dtype=torch.float32, device=timesteps.device) * -emb)
+    # emb = tf.range(num_embeddings, dtype=jnp.float32)[:, None] * emb[None, :]
+    # emb = tf.cast(timesteps, dtype=jnp.float32)[:, None] * emb[None, :]
+    emb = timesteps.float()[:, None] * emb[None, :]
+    emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
+    if embedding_dim % 2 == 1:  # zero pad
+        emb = F.pad(emb, (0, 1), mode="constant")
+    assert emb.shape == (timesteps.shape[0], embedding_dim)
+    return emb
+
+
+def _einsum(a, b, c, x, y):
+    einsum_str = "{},{}->{}".format("".join(a), "".join(b), "".join(c))
+    return torch.einsum(einsum_str, x, y)
+
+
+def contract_inner(x, y):
+    """tensordot(x, y, 1)."""
+    x_chars = list(string.ascii_lowercase[: len(x.shape)])
+    y_chars = list(string.ascii_lowercase[len(x.shape) : len(y.shape) + len(x.shape)])
+    y_chars[0] = x_chars[-1]  # first axis of y and last of x get summed
+    out_chars = x_chars[:-1] + y_chars[1:]
+    return _einsum(x_chars, y_chars, out_chars, x, y)
+
+
+def variance_scaling(scale, mode, distribution, in_axis=1, out_axis=0, dtype=torch.float32, device="cpu"):
+    """Ported from JAX."""
+
+    def _compute_fans(shape, in_axis=1, out_axis=0):
+        receptive_field_size = np.prod(shape) / shape[in_axis] / shape[out_axis]
+        fan_in = shape[in_axis] * receptive_field_size
+        fan_out = shape[out_axis] * receptive_field_size
+        return fan_in, fan_out
+
+    def init(shape, dtype=dtype, device=device):
+        fan_in, fan_out = _compute_fans(shape, in_axis, out_axis)
+        if mode == "fan_in":
+            denominator = fan_in
+        elif mode == "fan_out":
+            denominator = fan_out
+        elif mode == "fan_avg":
+            denominator = (fan_in + fan_out) / 2
+        else:
+            raise ValueError("invalid mode for variance scaling initializer: {}".format(mode))
+        variance = scale / denominator
+        if distribution == "normal":
+            return torch.randn(*shape, dtype=dtype, device=device) * np.sqrt(variance)
+        elif distribution == "uniform":
+            return (torch.rand(*shape, dtype=dtype, device=device) * 2.0 - 1.0) * np.sqrt(3 * variance)
+        else:
+            raise ValueError("invalid distribution for variance scaling initializer")
+
+    return init
+
+
+def default_init(scale=1.0):
+    """The same initialization used in DDPM."""
+    scale = 1e-10 if scale == 0 else scale
+    return variance_scaling(scale, "fan_avg", "uniform")

@@ -22,7 +22,7 @@ class UpSample(nn.Module):
 
     def __init__(self, in_channels):
         super().__init__()
-        self.upsample = nn.Sequential(nn.Upsample(scale_factor=2, mode='nearest'), nn.Conv2d(in_channels, in_channels, 3, padding=1))
+        self.upsample = nn.Sequential(nn.Upsample(scale_factor=2, mode="nearest"), nn.Conv2d(in_channels, in_channels, 3, padding=1))
 
     def forward(self, x, time_emb, y):
         return self.upsample(x)
@@ -85,7 +85,7 @@ class AttentionBlock(nn.Module):
         k = k.view(b, c, h * w)
         v = v.permute(0, 2, 3, 1).view(b, h * w, c)
 
-        dot_products = torch.bmm(q, k) * (c**(-0.5))
+        dot_products = torch.bmm(q, k) * (c ** (-0.5))
         assert dot_products.shape == (b, h * w, h * w)
 
         attention = torch.softmax(dot_products, dim=-1)
@@ -187,12 +187,16 @@ class UNet(nn.Module):
         attention_resolutions = config.model.attention_resolutions
         self.number_classes = num_classes
         self.activation = layers.LayerEnum.Activations[config.model.activation]
-        self.time_mlp = nn.Sequential(
-            PositionalEmbedding(base_channels, time_emb_scale),
-            nn.Linear(base_channels, time_emb_dim),
-            nn.SiLU(),
-            nn.Linear(time_emb_dim, time_emb_dim),
-        ) if time_emb_dim is not None else None
+        self.time_mlp = (
+            nn.Sequential(
+                PositionalEmbedding(base_channels, time_emb_scale),
+                nn.Linear(base_channels, time_emb_dim),
+                nn.SiLU(),
+                nn.Linear(time_emb_dim, time_emb_dim),
+            )
+            if time_emb_dim is not None
+            else None
+        )
 
         self.init_conv = nn.Conv2d(img_channels, base_channels, 3, padding=1)
         self.downs = nn.ModuleList()
@@ -222,30 +226,32 @@ class UNet(nn.Module):
                 self.downs.append(DownSample(now_channels))
                 channels.append(now_channels)
 
-        self.mid = nn.ModuleList([
-            ResidualBlock(
-                now_channels,
-                now_channels,
-                dropout,
-                time_emb_dim=time_emb_dim,
-                num_classes=num_classes,
-                activation=self.activation,
-                norm=norm,
-                num_groups=num_groups,
-                use_attention=True,
-            ),
-            ResidualBlock(
-                now_channels,
-                now_channels,
-                dropout,
-                time_emb_dim=time_emb_dim,
-                num_classes=num_classes,
-                activation=self.activation,
-                norm=norm,
-                num_groups=num_groups,
-                use_attention=False,
-            ),
-        ])
+        self.mid = nn.ModuleList(
+            [
+                ResidualBlock(
+                    now_channels,
+                    now_channels,
+                    dropout,
+                    time_emb_dim=time_emb_dim,
+                    num_classes=num_classes,
+                    activation=self.activation,
+                    norm=norm,
+                    num_groups=num_groups,
+                    use_attention=True,
+                ),
+                ResidualBlock(
+                    now_channels,
+                    now_channels,
+                    dropout,
+                    time_emb_dim=time_emb_dim,
+                    num_classes=num_classes,
+                    activation=self.activation,
+                    norm=norm,
+                    num_groups=num_groups,
+                    use_attention=False,
+                ),
+            ]
+        )
 
         for i, mult in reversed(list(enumerate(channel_mults))):
             out_channels = base_channels * mult
@@ -254,7 +260,7 @@ class UNet(nn.Module):
                 self.ups.append(
                     ResidualBlock(
                         channels.pop() + now_channels,
-                        #now_channels,
+                        # now_channels,
                         out_channels,
                         dropout,
                         time_emb_dim=time_emb_dim,
@@ -263,7 +269,8 @@ class UNet(nn.Module):
                         norm=norm,
                         num_groups=num_groups,
                         use_attention=i in attention_resolutions,
-                    ))
+                    )
+                )
                 now_channels = out_channels
 
             if i != 0:
@@ -325,12 +332,16 @@ class MMOEUNet(nn.Module):
 
         self.number_classes = num_classes
         self.activation = layers.LayerEnum.Activations[config.model.activation]
-        self.time_mlp = nn.Sequential(
-            PositionalEmbedding(base_channels, time_emb_scale),
-            nn.Linear(base_channels, time_emb_dim),
-            nn.SiLU(),
-            nn.Linear(time_emb_dim, time_emb_dim),
-        ) if time_emb_dim is not None else None
+        self.time_mlp = (
+            nn.Sequential(
+                PositionalEmbedding(base_channels, time_emb_scale),
+                nn.Linear(base_channels, time_emb_dim),
+                nn.SiLU(),
+                nn.Linear(time_emb_dim, time_emb_dim),
+            )
+            if time_emb_dim is not None
+            else None
+        )
 
         self.init_conv = nn.Conv2d(img_channels, base_channels, 3, padding=1)
         self.downs = nn.ModuleList()
@@ -360,30 +371,32 @@ class MMOEUNet(nn.Module):
                 self.downs.append(DownSample(now_channels))
                 channels.append(now_channels)
 
-        self.mid = nn.ModuleList([
-            ResidualBlock(
-                now_channels,
-                now_channels,
-                dropout,
-                time_emb_dim=time_emb_dim,
-                num_classes=num_classes,
-                activation=self.activation,
-                norm=norm,
-                num_groups=num_groups,
-                use_attention=True,
-            ),
-            ResidualBlock(
-                now_channels,
-                now_channels,
-                dropout,
-                time_emb_dim=time_emb_dim,
-                num_classes=num_classes,
-                activation=self.activation,
-                norm=norm,
-                num_groups=num_groups,
-                use_attention=False,
-            ),
-        ])
+        self.mid = nn.ModuleList(
+            [
+                ResidualBlock(
+                    now_channels,
+                    now_channels,
+                    dropout,
+                    time_emb_dim=time_emb_dim,
+                    num_classes=num_classes,
+                    activation=self.activation,
+                    norm=norm,
+                    num_groups=num_groups,
+                    use_attention=True,
+                ),
+                ResidualBlock(
+                    now_channels,
+                    now_channels,
+                    dropout,
+                    time_emb_dim=time_emb_dim,
+                    num_classes=num_classes,
+                    activation=self.activation,
+                    norm=norm,
+                    num_groups=num_groups,
+                    use_attention=False,
+                ),
+            ]
+        )
 
         for i, mult in reversed(list(enumerate(channel_mults))):
             out_channels = base_channels * mult
@@ -393,7 +406,7 @@ class MMOEUNet(nn.Module):
                 self.ups1.append(
                     ResidualBlock(
                         pop_channel + now_channels,
-                        #now_channels,
+                        # now_channels,
                         out_channels,
                         dropout,
                         time_emb_dim=time_emb_dim,
@@ -402,11 +415,12 @@ class MMOEUNet(nn.Module):
                         norm=norm,
                         num_groups=num_groups,
                         use_attention=i in attention_resolutions,
-                    ))
+                    )
+                )
                 self.ups2.append(
                     ResidualBlock(
                         pop_channel + now_channels,
-                        #now_channels,
+                        # now_channels,
                         out_channels,
                         dropout,
                         time_emb_dim=time_emb_dim,
@@ -415,7 +429,8 @@ class MMOEUNet(nn.Module):
                         norm=norm,
                         num_groups=num_groups,
                         use_attention=i in attention_resolutions,
-                    ))
+                    )
+                )
                 now_channels = out_channels
 
             if i != 0:
@@ -473,7 +488,7 @@ class MMOEUNet(nn.Module):
 
         time_gate = self.time_gate(time_emb)
         time_gate_softmax = self.time_gate_softmax(time_gate)
-        #logging.debug(time_gate_softmax)
+        # logging.debug(time_gate_softmax)
         x = x1 * time_gate_softmax[:, 0][:, None, None, None] + x2 * time_gate_softmax[:, 1][:, None, None, None]
 
-        return x, {'time_gate_softmax': time_gate_softmax}
+        return x, {"time_gate_softmax": time_gate_softmax}

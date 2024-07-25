@@ -14,13 +14,13 @@ flags.DEFINE_enum("mode", "train", ["train", "eval"], "Running mode: train or ev
 flags.DEFINE_string("eval_folder", "eval", "The folder name for storing evaluation results")
 flags.DEFINE_string("runner", "Test", "The runner to execute")
 
-#flags.mark_flags_as_required(["workdir", "config", "mode"])
+# flags.mark_flags_as_required(["workdir", "config", "mode"])
 
 
 # 'application' code
 def main(argv):
 
-    #os.chdir('E:\jikewct\Repos\ml_code')
+    # os.chdir('E:\jikewct\Repos\ml_code')
     logging.config.fileConfig("./configs/conf/log.conf")
 
     logging.info("this is a log")
@@ -28,7 +28,7 @@ def main(argv):
     while True:
         logging.info("this file is running .......")
         logging.info(FLAGS.mode)
-        time.sleep(5)
+        time.sleep(10)
 
 
 """

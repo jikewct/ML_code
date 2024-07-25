@@ -19,10 +19,14 @@
 		{
 			"name": "RectifiedFlow",
 			"path": "../RectifiedFlow"
+		},
+		{
+			"path": "../U-ViT"
 		}
 	],
 	"settings": {
 		"editor.defaultFormatter": "ms-python.black-formatter",
+		"terminal.integrated.shellIntegration.enabled": false,
 
 	}
 }

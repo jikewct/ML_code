@@ -9,14 +9,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
 
-from . import model_utils
+from network import ncsnv2, net_utils
+
+from . import model_factory, model_utils
 from .base_model import BaseModel
 from .ema import EMA
-from .model_utils import *
-from .network import ncsnv2, net_utils
 
 
-@model_utils.register_model(name="smld")
+@model_factory.register_model(name="smld")
 class SMLD(BaseModel):
 
     def __init__(self, config):
@@ -48,19 +48,19 @@ class SMLD(BaseModel):
     def forward(self, x, y=None):
 
         b, c, h, w = x.shape
-        t = torch.randint(0, len(self.sigmas), (b, ), device=x.device)
-        #used_sigmas = self.extract(self.sigmas, t, x.shape)
+        t = torch.randint(0, len(self.sigmas), (b,), device=x.device)
+        # used_sigmas = self.extract(self.sigmas, t, x.shape)
         used_sigmas = self.sigmas[t].view(b, *([1] * len(x.shape[1:])))
         noise = torch.randn_like(x)
         perturbed_x = x + noise * used_sigmas
         scores, extra_info = self.predict(perturbed_x, t)
         scores = scores * used_sigmas
-        #logging.info(scores.shape, noise.shape)
-        extra_info.update({'t': t, 'noise': noise})
+        # logging.info(scores.shape, noise.shape)
+        extra_info.update({"t": t, "noise": noise})
         return scores, -noise, extra_info
 
     def SNR(self, t):
-        return 1 / (self.sigmas[t[0]]**2).item()
+        return 1 / (self.sigmas[t[0]] ** 2).item()
 
     def predict(self, x, t, y=None, use_ema=False):
         preds, extra_info = super().predict(x, t, y, use_ema)
@@ -73,7 +73,7 @@ class SMLD(BaseModel):
         #     sigmoid_t = torch.sigmoid(self.union_tau * (t - self.union_threshold))[:, None, None, None]
         #     preds = -(((x - preds) / used_sigmas) * sigmoid_t + (preds * (1 - sigmoid_t))) / used_sigmas
 
-        if self.mode == ModeEnum.SAMPLING:
+        if self.mode == model_utils.ModeEnum.SAMPLING:
             self.debug_sampling(x, t, preds, extra_info)
         return preds, extra_info
 
@@ -85,21 +85,21 @@ class SMLD(BaseModel):
         if y is not None and batch_size != len(y):
             raise ValueError("sample batch size different from length of given y")
 
-        #logging.info(batch_size, self.img_channels, self.img_size)
+        # logging.info(batch_size, self.img_channels, self.img_size)
         x = self.prior_sampling(batch_size, device)
         for c, sigma in tqdm.tqdm(enumerate(self.sigmas), desc="sampling level", total=len(self.sigmas), leave=False):
             t = (torch.ones(batch_size, device=x.device) * c).to(torch.long)
-            step_size = self.step_lr * (sigma / self.sigmas[-1])**2
+            step_size = self.step_lr * (sigma / self.sigmas[-1]) ** 2
             for s in tqdm.tqdm(range(self.n_steps_each), desc="sampling step", total=self.n_steps_each, leave=False):
 
                 grad, extra_info = self.predict(x, t, y, use_ema)
                 noise = torch.randn_like(x)
-                x = x + step_size * grad + noise * ((2 * step_size)**(0.5))
+                x = x + step_size * grad + noise * ((2 * step_size) ** (0.5))
 
         if self.denoise:
             t = (torch.ones(batch_size, device=x.device) * (len(self.sigmas) - 1)).to(torch.long)
             grad, extra_info = self.predict(x, t, y, use_ema)
-            x = x + self.sigmas[-1]**2 * grad
+            x = x + self.sigmas[-1] ** 2 * grad
         return x.detach()
 
     @torch.no_grad()

@@ -15,7 +15,7 @@
 
 # Lint as: python3
 
-from configs.default_mnist_configs import get_default_configs
+from configs.default_configs import get_default_configs
 
 
 def get_config():
@@ -30,7 +30,7 @@ def get_config():
     test = config.test
 
     ### 调整默认配置
-    model.name = 'smld'
+    model.name = "smld"
     model.nn_name = "unet"
     sampling.step_lr = 0.0000062
     training.model_checkpoint = "./data/checkpoints/generative_model/smld/unet-mnist-40000-model"

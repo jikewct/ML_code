@@ -22,7 +22,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from . import layers, layerspp, net_utils, normalization
+from . import net_factory
+from .layers import layer_utils, layers, layerspp, normalization
 
 ResnetBlockDDPM = layerspp.ResnetBlockDDPMpp
 ResnetBlockBigGAN = layerspp.ResnetBlockBigGANpp
@@ -31,10 +32,10 @@ conv3x3 = layerspp.conv3x3
 conv1x1 = layerspp.conv1x1
 get_act = layers.get_act
 # get_normalization = normalization.get_normalization
-default_initializer = net_utils.default_init
+default_initializer = layer_utils.default_init
 
 
-@net_utils.register_network(name="ncsnpp")
+@net_factory.register_network(name="ncsnpp")
 class NCSNpp(nn.Module):
     """NCSN++ model"""
 
@@ -42,7 +43,7 @@ class NCSNpp(nn.Module):
         super().__init__()
         self.config = config
         self.act = act = get_act(config.model.activation)
-        self.register_buffer("sigmas", net_utils.get_sigmas(config))
+        self.register_buffer("sigmas", layer_utils.get_sigmas(config))
 
         self.nf = nf = config.model.nf
         ch_mult = config.model.channel_mults
@@ -237,7 +238,7 @@ class NCSNpp(nn.Module):
             # Sinusoidal positional embeddings.
             timesteps = time_cond
             used_sigmas = self.sigmas[time_cond.long()]
-            temb = net_utils.get_timestep_embedding(timesteps, self.nf)
+            temb = layer_utils.get_timestep_embedding(timesteps, self.nf)
 
         else:
             raise ValueError(f"embedding type {self.embedding_type} unknown.")

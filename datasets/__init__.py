@@ -12,4 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from .afhq import *
+from .afhq_feature import *
+from .celeba import *
+from .cifar10 import *
+from .dataset_factory import *
+from .lsun_church import *
+from .mnist import *

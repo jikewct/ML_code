@@ -1,43 +1,31 @@
 import logging
+
 import torch
 import torchvision.transforms as tforms
 from torch.utils.data import DataLoader
 from torchvision import datasets
 
+from . import dataset_factory
+from .base_dataset import BaseDataset
 from .data_trans import trans
 
 
+@dataset_factory.register_dataset(name="cifar10")
 class Cifar10:
+    def __init__(self, **kargs):
+        super().__init__(**kargs)
 
-    @staticmethod
-    def get_loader(root, batch_size):
-
-        train_dataset = datasets.CIFAR10(
-            root=root,
+    def init_dataset(self, **kargs):
+        self.train_dataset = datasets.CIFAR10(
+            root=self.root_path,
             train=True,
             download=True,
-            transform=trans,
-            # transform=script_utils.get_transform(),
+            transform=self.trans,
         )
 
-        test_dataset = datasets.CIFAR10(
-            root=root,
+        self.val_dataset = datasets.CIFAR10(
+            root=self.root_path,
             train=False,
             download=True,
-            transform=trans,
-            # transform=script_utils.get_transform(),
+            transform=self.trans,
         )
-        logging.info(f"train images num:{len(train_dataset)}, test images num:{len(test_dataset)}, dataset path:{root}")
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=batch_size,
-            shuffle=True,
-            drop_last=True,
-        )
-        test_loader = DataLoader(
-            test_dataset,
-            batch_size=batch_size,
-            drop_last=True,
-        )
-
-        return train_loader, test_loader

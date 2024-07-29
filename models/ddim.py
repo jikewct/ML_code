@@ -20,20 +20,21 @@ class DDIM(DDPM):
     def init_parameters(self, config):
         super().init_parameters(config)
         self.eta = config.test.eta
+        self.sampling_steps = config.sampling.sampling_steps
 
     @torch.no_grad()
-    def sample(self, batch_size, device, y=None, use_ema=True, steps=50):
+    def sample(self, batch_size, y=None, use_ema=True):
         if y is not None and batch_size != len(y):
             raise ValueError("sample batch size different from length of given y")
         T = len(self.betas)
-        interval = T // steps
+        interval = T // self.sampling_steps
         step_list = np.asarray(list(range(0, T, interval)), dtype=np.int64)
         # logging.info(step_list)
         step_list_prev = np.concatenate([[-1], step_list[:-1]])
         # logging.info(step_list_prev)
 
-        x = self.prior_sampling(batch_size, device)
-        for t in reversed(range(0, steps)):
+        x = self.prior_sampling(batch_size, self.device)
+        for t in reversed(range(0, self.sampling_steps)):
             x = self.ddim_enoising_step2(x, step_list[t], step_list_prev[t], y, use_ema)
         return x.detach()
 

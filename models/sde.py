@@ -10,9 +10,6 @@ import torch.nn.functional as F
 import tqdm
 import wandb
 
-from network import ncsnv2, net_utils
-from utils import monitor
-
 from . import model_factory, model_utils
 from .base_model import BaseModel
 from .ema import EMA
@@ -269,11 +266,11 @@ class SDE(BaseModel):
         pass
 
     @torch.no_grad()
-    def sample(self, batch_size, device, y=None, use_ema=True, steps=10):
+    def sample(self, batch_size, y=None, use_ema=True, steps=10):
         if self.sampling_method.lower() == "ode":
-            x = self.ode_sample(batch_size, device, y, use_ema)
+            x = self.ode_sample(batch_size, self.device, y, use_ema)
         elif self.sampling_method.lower() == "pc":
-            x = self.pc_sample(batch_size, device, y, use_ema)
+            x = self.pc_sample(batch_size, self.device, y, use_ema)
         else:
             raise NotImplementedError(f"{self.sampling_method} not yet supported.")
         return x

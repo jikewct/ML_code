@@ -9,7 +9,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
 
-from network import ncsnv2, net_utils
+from network import ncsnv2
+from network.layers import layer_utils
 
 from . import model_factory, model_utils
 from .base_model import BaseModel
@@ -36,7 +37,7 @@ class SMLD(BaseModel):
         self.union_threshold = config.model.union_threshold
 
     def init_coefficient(self, config):
-        self.sigmas = net_utils.get_sigmas(config)
+        self.sigmas = layer_utils.get_sigmas(config)
 
     @property
     def T(self):
@@ -81,12 +82,12 @@ class SMLD(BaseModel):
         return torch.randn(batch_size, self.img_channels, *self.img_size, device=device) * self.sigma_max
 
     @torch.no_grad()
-    def sample(self, batch_size, device, y=None, use_ema=True, steps=1000):
+    def sample(self, batch_size, y=None, use_ema=True, steps=1000):
         if y is not None and batch_size != len(y):
             raise ValueError("sample batch size different from length of given y")
 
         # logging.info(batch_size, self.img_channels, self.img_size)
-        x = self.prior_sampling(batch_size, device)
+        x = self.prior_sampling(batch_size, self.device)
         for c, sigma in tqdm.tqdm(enumerate(self.sigmas), desc="sampling level", total=len(self.sigmas), leave=False):
             t = (torch.ones(batch_size, device=x.device) * c).to(torch.long)
             step_size = self.step_lr * (sigma / self.sigmas[-1]) ** 2

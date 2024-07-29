@@ -16,14 +16,14 @@
 # Lint as: python3
 """Train the original DDPM model."""
 
-from configs.default_mnist_configs import get_default_configs
+from configs.default_configs import get_default_configs
 
 
 def get_config():
     config = get_default_configs()
     training = config.training
     training.model_checkpoint = "./data/checkpoints/generative_model/vesde/unet-mnist-14000-model"
-    #training.optim_checkpoint = ".\data\checkpoints\ddpm-cifar10-81000-optim.pth"
+    # training.optim_checkpoint = ".\data\checkpoints\ddpm-cifar10-81000-optim.pth"
 
     model = config.model
     model.channel_mults = (1, 2)
@@ -33,8 +33,8 @@ def get_config():
     model.sigma_min = 0.01
     model.num_scales = 232
     model.sigma_dist = "geometric"
-    #model.norm = "gn"
-    #model.activation = "elu"
+    # model.norm = "gn"
+    # model.activation = "elu"
     model.ngf = 128
     model.debug_groups = 10
     model.enable_debug = True
@@ -65,11 +65,11 @@ def get_config():
     sampling.denoise = True
     sampling.sample_steps = 1000
     sampling.snr = 0.16
-    sampling.method = 'pc'
+    sampling.method = "pc"
     ##  euler  reversediffusion     ancestralsampling
-    sampling.predictor = 'reversediffusion'
+    sampling.predictor = "reversediffusion"
     ## ald  langevin
-    sampling.corrector = 'ald'
+    sampling.corrector = "ald"
 
     data = config.data
     data.logit_transform = False

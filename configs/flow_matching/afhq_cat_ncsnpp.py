@@ -16,6 +16,7 @@
 # Lint as: python3
 """Train the original DDPM model."""
 
+from configs.config_utils import *
 from configs.default_afhq_configs import get_default_configs
 
 
@@ -29,73 +30,88 @@ def get_config():
     optim = config.optim
     test = config.test
 
-    # training.model_checkpoint = "./data/checkpoints/generative_model/flowMatching/ncsnpp-afhq-31000-model"
-    # training.model_checkpoint = "/home/jikewct/public/jikewct/Model/rect_flow/CelebA-HQ-Pytorch_model_ema.pth"
-    training.continuous = False
-    training.batch_size = 32
-    training.epochs = 100
-    training.snapshot_freq = 1000
-    training.log_freq = 20
-    training.eval_freq = 500
-    training.test_metric_freq = 10000
+    c(config, "training").update(
+        model_checkpoint="./data/checkpoints/generative_model/flowMatching/ncsnpp-afhq-6000-model",
+        # training.model_checkpoint = "/home/jikewct/public/jikewct/Model/rect_flow/CelebA-HQ-Pytorch_model_ema.pth",
+        continuous=False,
+        batch_size=16,
+        epochs=100,
+        snapshot_freq=1000,
+        log_freq=20,
+        eval_freq=500,
+        test_metric_freq=10000,
+    )
+    c(config, "model").update(
+        name="flowMatching",
+        nn_name="ncsnpp",
+        # model.norm = "gn"
+        # model.activation = "elu"
+    )
+    c(config, "flowMatching").update(
+        num_scales=1000,
+    )
+    # ncsnpp config
+    c(config, "model").update(
+        scale_by_sigma=False,
+        ema_rate=0.999,
+        dropout=0.0,
+        norm="GroupNorm",
+        activation="swish",
+        nf=128,
+        channel_mults=(1, 1, 2, 2, 2),
+        num_res_blocks=2,
+        attention_resolutions=(16,),
+        resamp_with_conv=True,
+        conditional=True,
+        fir=True,
+        fir_kernel=[1, 3, 3, 1],
+        skip_rescale=True,
+        resblock_type="biggan",
+        progressive="output_skip",
+        progressive_input="input_skip",
+        progressive_combine="sum",
+        attention_type="ddpm",
+        init_scale=0.0,
+        embedding_type="fourier",
+        fourier_scale=16,
+        conv_size=3,
+        grad_checkpoint=True,
+        sigma_dist="geometric",
+        sigma_max=50,
+        sigma_min=0.01,
+        num_scales=1000,
+    )
+    # v(config, "model").update(v(config, "ncsnpp"))
+    c(config, "data").update(
+        img_size=(128, 128),
+        img_class="cat",
+    )
 
-    model.name = "flowMatching"
-    model.nn_name = "ncsnpp"
+    c(config, "test").update(
+        save_path="./data/test/",
+        batch_size=10,
+        num_samples=2,
+    )
+    c(config, "fast_fid").update(
+        num_samples=10000,
+        begin_step=5000,
+        end_step=1000000,
+        batch_size=32,
+    )
+    c(config, "sampling").update(
+        log_freq=1,
+        method="rk45",
+        sampling_steps=50,
+    )
+    c(config.sampling, "rk45").update(
+        rtol=1e-3,
+        atol=1e-3,
+    )
+    c(config.sampling, "ode").update()
+    c(config, "optim").update(
+        lr=1e-4,
+    )
 
-    # model.norm = "gn"
-    # model.activation = "elu"
-
-    model.scale_by_sigma = False
-    model.ema_rate = 0.999
-    model.dropout = 0.0
-    model.norm = "GroupNorm"
-    model.activation = "swish"
-    model.nf = 128
-    model.channel_mults = (1, 1, 2, 2, 2)
-    model.num_res_blocks = 2
-    model.attention_resolutions = (16,)
-    model.resamp_with_conv = True
-    model.conditional = True
-    model.fir = True
-    model.fir_kernel = [1, 3, 3, 1]
-    model.skip_rescale = True
-    model.resblock_type = "biggan"
-    model.progressive = "output_skip"
-    model.progressive_input = "input_skip"
-    model.progressive_combine = "sum"
-    model.attention_type = "ddpm"
-    model.init_scale = 0.0
-    model.embedding_type = "fourier"
-    model.fourier_scale = 16
-    model.conv_size = 3
-    model.grad_checkpoint = True
-
-    model.sigma_dist = "geometric"
-    model.sigma_max = 50
-    model.sigma_min = 0.01
-    model.num_scales = 1000
-
-    data.category = "church_outdoor_train"
-    data.img_size = (128, 128)
-    data.img_class = "cat"
-
-    test.save_path = "./data/test/"
-    test.batch_size = 10
-    test.num_samples = 2
-
-    fast_fid.num_samples = 10000
-    fast_fid.begin_step = 5000
-    fast_fid.end_step = 1000000
-    fast_fid.batch_size = 32
-
-    sampling.sample_steps = 10
-    sampling.denoise = True
-    sampling.log_freq = 1
-    sampling.rtol = 1e-3
-    sampling.atol = 1e-3
-    sampling.method = "rk45"
-
-    optim.lr = 1e-4
     config.pipeline = "FlowMatchingPipeLine"
 
     return config

@@ -5,7 +5,9 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.utils
 import wandb
+
 from pipeline import *
 
 __all__ = ["TrainDiffusion"]
@@ -17,7 +19,7 @@ class TrainDiffusion:
         self.args = args
         self.config = config
 
-    def init_wandb(self, config, pipeline):
+    def init_wandb(self, config, pipeline: BasePipeLine):
         if config.training.log_to_wandb:
             if config.training.project_name is None:
                 raise ValueError("args.log_to_wandb set to True but args.project_name is None")
@@ -26,11 +28,18 @@ class TrainDiffusion:
                 dir="./data/",
                 project=config.training.project_name,
                 config=vars(config),
-                name=config.data.dataset + "-" + self.args.mode + "-" + config.model.name + "-" + config.model.nn_name +
-                datetime.datetime.now().strftime("-%Y-%m-%d-%H-%M"),
+                id=pipeline.uuid,
+                name=config.data.dataset
+                + "-"
+                + self.args.mode
+                + "-"
+                + config.model.name
+                + "-"
+                + config.model.nn_name
+                + datetime.datetime.now().strftime("-%Y-%m-%d-%H-%M"),
             )
             # wandb.log({"net": pipeline.get_model()})
-            wandb.watch(pipeline.get_model(), log="all")
+            logging.info(f"wandb url:{run.get_url()}")
             return run
 
     def log_runner_status(self):

@@ -16,6 +16,7 @@ from .base_model import *
 from .ddim import *
 from .ddpm import *
 from .flow_matching import *
+from .ldm import *
 from .model_factory import *
 from .model_utils import *
 from .sde import *

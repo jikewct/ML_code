@@ -22,8 +22,8 @@ from configs.default_cifar10_configs import get_default_configs
 def get_config():
     config = get_default_configs()
     training = config.training
-    #training.model_checkpoint = ".\data\checkpoints\ddpm-cifar10-81000-model.pth"
-    #training.optim_checkpoint = ".\data\checkpoints\ddpm-cifar10-81000-optim.pth"
+    # training.model_checkpoint = ".\data\checkpoints\ddpm-cifar10-81000-model.pth"
+    # training.optim_checkpoint = ".\data\checkpoints\ddpm-cifar10-81000-optim.pth"
 
     model = config.model
     model.channel_mults = (1, 2, 2, 2)
@@ -40,7 +40,7 @@ def get_config():
     test.eta = 0.0
 
     sampling = config.sampling
-    sampling.sample_steps = 50
+    sampling.sampling_steps = 50
 
     config.pipeline = "DDIMPipeLine"
 

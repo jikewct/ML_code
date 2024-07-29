@@ -1,4 +1,7 @@
 import time
+from enum import Enum
+
+import torch
 
 
 class RunningAverageMeter(object):
@@ -57,21 +60,32 @@ class RunningMovingAverageMeter(object):
 
 class TimeMeter(object):
 
+    class TimeStateEnum(Enum):
+        START = 1
+        STOP = 2
+
     def __init__(self):
         self.reset()
 
     def start(self):
+        if self.state == TimeMeter.TimeStateEnum.START:
+            return self
         self.preTime = time.time()
         self.currentTime = self.preTime
+        self.state = TimeMeter.TimeStateEnum.START
         return self
 
     def reset(self):
         self.startTime = time.time()
         self.currentTime = 0
         self.preTime = 0
+        self.state = TimeMeter.TimeStateEnum.STOP
 
     def stop(self):
+        if self.state == TimeMeter.TimeStateEnum.STOP:
+            return self
         self.currentTime = time.time()
+        self.state = TimeMeter.TimeStateEnum.STOP
         return self
 
     def interval(self):
@@ -117,3 +131,15 @@ class HistogramMeter(object):
     def reset(self):
         self.count_dict.clear()
         self.sum_dict.clear()
+
+
+def cuda_memory(device):
+
+    memory_info = {
+        "m_max_reserved": torch.cuda.max_memory_reserved(device) / 2**30,
+        "m_allocated": torch.cuda.memory_allocated(device) / 2**30,
+        "m_max_allocated": torch.cuda.max_memory_allocated(device) / 2**30,
+        "m_reserved": torch.cuda.memory_reserved(device) / 2**30,
+    }
+    torch.cuda.reset_peak_memory_stats(device)
+    return memory_info

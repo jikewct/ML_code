@@ -15,20 +15,22 @@ flags.DEFINE_string("eval_folder", "eval", "The folder name for storing evaluati
 flags.DEFINE_string("runner", "Test", "The runner to execute")
 
 # flags.mark_flags_as_required(["workdir", "config", "mode"])
+os.chdir("/home/jikewct/public/jikewct/Repos/ml_code")
 
 
 # 'application' code
 def main(argv):
+    config = FLAGS.config
+    print(config)
+    print(config["training"])
+    # logging.config.fileConfig("./configs/conf/log.conf")
 
-    # os.chdir('E:\jikewct\Repos\ml_code')
-    logging.config.fileConfig("./configs/conf/log.conf")
-
-    logging.info("this is a log")
-    logging.debug("this is a debug log")
-    while True:
-        logging.info("this file is running .......")
-        logging.info(FLAGS.mode)
-        time.sleep(10)
+    # logging.info("this is a log")
+    # logging.debug("this is a debug log")
+    # while True:
+    #     logging.info("this file is running .......")
+    #     logging.info(FLAGS.mode)
+    #     time.sleep(10)
 
 
 """

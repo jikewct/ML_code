@@ -12,8 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from .base_pipeline import *
 from .ddim_pipeline import *
 from .ddpm_pipeline import *
 from .flow_matching_pipeline import *
+from .ldm_pipeline import *
 from .sde_pipeline import *
 from .smld_pipeline import *

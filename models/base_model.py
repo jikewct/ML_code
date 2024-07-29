@@ -13,7 +13,8 @@ import tqdm
 import wandb
 from accelerate import Accelerator
 
-from network import ncsnv2, net_utils
+from network import ncsnv2, net_factory
+from network.layers import layer_utils
 from utils import monitor
 
 from . import model_utils
@@ -30,6 +31,7 @@ class BaseModel(ABC):
 
     def init_parameters(self, config):
         self.step = 0
+        self.device = config.device
         self.img_size = config.data.img_size
         self.img_channels = config.data.img_channels
         self.num_classes = config.data.num_classes
@@ -38,13 +40,14 @@ class BaseModel(ABC):
         self.mode = model_utils.ModeEnum.TRAIN
 
     def init_debug_info(self, config):
-        self.enable_debug_sampling = config.sampling.enable_debug
+        self.sampling_enable_debug = config.sampling.enable_debug
         self.sampling_log_freq = config.sampling.log_freq
         self.debug_groups = config.training.debug_groups
         self.enable_debug = config.training.enable_debug
-        self.enable_lora = any(config.model.enable_lora)
+        self.enable_lora = config.model.enable_lora
+        if self.enable_lora:
+            self.lora_config = config.model.lora
         self.load_ckpt_strict = config.model.load_ckpt_strict
-        self.lora_bias_trainable = config.model.lora_bias_trainable
         self.debug_sampling_save_path = config.test.save_path + "/debug_sampling"
         self.loss_group_metric = monitor.HistogramMeter("loss")
         self.mmoe_weight1_metric = monitor.HistogramMeter("mmoe_w1")
@@ -57,16 +60,17 @@ class BaseModel(ABC):
         self.mmoe_weight2_metric.reset()
 
     def init_network(self, config):
-        self.network = net_utils.create_network(config).to(config.device)
+        self.network = net_factory.create_network(config).to(config.device)
         self.enable_ema = config.model.enable_ema
         if self.enable_ema:
             self.init_ema(config)
 
     def init_ema(self, config):
-        self.ema = EMA(config.model.ema_decay)
-        self.ema_decay = config.model.ema_decay
-        self.ema_start = config.model.ema_start
-        self.ema_update_rate = config.model.ema_update_rate
+        ema_config = config.model.ema
+        self.ema = EMA(ema_config.ema_decay)
+        self.ema_decay = ema_config.ema_decay
+        self.ema_start = ema_config.ema_start
+        self.ema_update_rate = ema_config.ema_update_rate
         self.ema_network = deepcopy(self.network)
 
     def accelerator_prepare(self, accelerator: Accelerator):
@@ -81,11 +85,11 @@ class BaseModel(ABC):
     def parameters(self):
         return self.network.parameters()
 
-    def save_checkpoint(self, filepath):
-        torch.save(self.network.state_dict(), filepath)
-        if self.enable_ema:
-            ema_filepath = filepath + "-ema"
-            torch.save(self.ema_network.state_dict(), ema_filepath)
+    # def save_checkpoint(self, filepath):
+    #     torch.save(self.network.state_dict(), filepath)
+    #     if self.enable_ema:
+    #         ema_filepath = filepath + "-ema"
+    #         torch.save(self.ema_network.state_dict(), ema_filepath)
 
     def load_checkpoint(self, filepath):
         state_dict = torch.load(filepath)
@@ -98,10 +102,22 @@ class BaseModel(ABC):
         if self.enable_ema:
             self.ema_network.load_state_dict(state_dict, strict)
         if self.enable_lora:
-            net_utils.mark_only_lora_as_trainable(self.network, bias=self.lora_bias_trainable)
+            layer_utils.mark_only_lora_as_trainable(self.network, bias=self.lora_config.lora_bias_trainable)
             for name, p in list(self.network.named_parameters()):
                 if p.requires_grad:
                     logging.debug(f"parameter: {name} grad:{p.requires_grad}, shape:{p.shape}")
+
+    def load_state(self, state):
+        self.network.load_state_dict(state["network"])
+        if self.enable_ema:
+            self.ema_network.load_state_dict(state["ema_network"])
+
+    def state_dict(self):
+        state = dict()
+        state["network"] = self.network.state_dict()
+        if self.enable_ema:
+            state["ema_network"] = self.ema_network.state_dict()
+        return state
 
     def set_train_mode(self):
         self.mode = model_utils.ModeEnum.TRAIN
@@ -143,10 +159,12 @@ class BaseModel(ABC):
 
     def predict(self, x, t, y=None, use_ema=False):
         if use_ema and self.enable_ema:
-            output, extra_info = self.ema_network(x, t, y)
+            output = self.ema_network(x, t, y)
         else:
-            output, extra_info = self.network(x, t, y)
-        return output, extra_info
+            output = self.network(x, t, y)
+        if isinstance(output, tuple):
+            return output[0], output[1]
+        return output, {}
 
     @abstractmethod
     def forward(self, x, y=None):
@@ -168,7 +186,7 @@ class BaseModel(ABC):
 
     @abstractmethod
     @torch.no_grad()
-    def sample(self, batch_size, device, y=None, use_ema=True, steps=1000):
+    def sample(self, batch_size, y=None, use_ema=True):
         pass
 
     @abstractmethod
@@ -211,7 +229,7 @@ class BaseModel(ABC):
     def debug_sampling(self, x, t, preds, extra_info):
         self.debug_sampling_step.inc()
         if (
-            not self.enable_debug_sampling
+            not self.sampling_enable_debug
             or not self.log_to_wandb
             or self.mode != model_utils.ModeEnum.SAMPLING
             or self.debug_sampling_step.val % self.sampling_log_freq != 0
@@ -248,7 +266,7 @@ class BaseModel(ABC):
                 }
             )
         os.makedirs(self.debug_sampling_save_path, exist_ok=True)
-        save_filename = "{}/{:08d}.jpg".format(self.debug_sampling_save_path, self.debug_sampling_step.val)
+        save_filename = "{}/{:08d}.png".format(self.debug_sampling_save_path, self.debug_sampling_step.val)
         imageio.imwrite(save_filename, cvt_x)
         logging.debug(sampling_info)
 

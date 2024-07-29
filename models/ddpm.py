@@ -8,7 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
 
-from network import net_utils, official_ddpm_unet, unet
+from network import official_ddpm_unet, unet
+from network.layers import layer_utils
 
 from . import model_factory, model_utils
 from .base_model import BaseModel
@@ -156,28 +157,28 @@ class DDPM(BaseModel):
         return super().cal_expected_norm(1.0)
 
     @torch.no_grad()
-    def sample(self, batch_size, device, y=None, use_ema=True, steps=1000):
+    def sample(self, batch_size, y=None, use_ema=True):
         if y is not None and batch_size != len(y):
             raise ValueError("sample batch size different from length of given y")
 
         # logging.info(batch_size, self.img_channels, self.img_size)
-        x = self.prior_sampling(batch_size, device)
+        x = self.prior_sampling(batch_size, self.device)
 
-        for t in tqdm.tqdm(range(steps - 1, -1, -1), desc="sampling", total=steps, leave=False):
+        for t in tqdm.tqdm(range(len(self.betas) - 1, -1, -1), desc="sampling", total=len(self.betas), leave=False):
             x = self.denoising_step(x, t, y, use_ema)
 
         return x.detach()
 
     @torch.no_grad()
-    def sample_diffusion_sequence(self, batch_size, device, y=None, use_ema=True, steps=1000):
+    def sample_diffusion_sequence(self, batch_size, y=None, use_ema=True):
         if y is not None and batch_size != len(y):
             raise ValueError("sample batch size different from length of given y")
 
-        x = torch.randn(batch_size, self.img_channels, *self.img_size, device=device)
+        x = torch.randn(batch_size, self.img_channels, *self.img_size, device=self.device)
         diffusion_sequence = [x.detach()]
 
-        for t in range(steps - 1, -1, -1):
-            t_batch = torch.tensor([t], device=device).repeat(batch_size)
+        for t in range(len(self.betas) - 1, -1, -1):
+            t_batch = torch.tensor([t], device=self.device).repeat(batch_size)
             x = self.denoising_mean(x, t_batch, y, use_ema)
 
             if t > 0:

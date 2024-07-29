@@ -1,43 +1,32 @@
 import logging
+
 import torch
 import torchvision.transforms as tforms
 from torch.utils.data import DataLoader
 from torchvision import datasets
 
-from .data_trans import trans
+from . import dataset_factory
+from .base_dataset import BaseDataset
 
 
-class Mnist:
+@dataset_factory.register_dataset(name="mnist")
+class Mnist(BaseDataset):
 
-    @staticmethod
-    def get_loader(root, batch_size):
+    def __init__(self, **kargs):
+        super().__init__(**kargs)
 
-        train_dataset = datasets.MNIST(
-            root=root,
+    def init_dataset(self, **kargs):
+
+        self.train_dataset = datasets.MNIST(
+            root=self.root_path,
             train=True,
             download=True,
-            transform=trans,
-            # transform=script_utils.get_transform(),
+            transform=self.trans,
         )
 
-        test_dataset = datasets.MNIST(
-            root=root,
+        self.val_dataset = datasets.MNIST(
+            root=self.root_path,
             train=False,
             download=True,
-            transform=trans,
-            # transform=script_utils.get_transform(),
+            transform=self.trans,
         )
-        logging.info(f"train images num:{len(train_dataset)}, val images num:{len(val_dataset)}, dataset path:{root}")
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=batch_size,
-            shuffle=True,
-            drop_last=True,
-        )
-        test_loader = DataLoader(
-            test_dataset,
-            batch_size=batch_size,
-            drop_last=True,
-        )
-
-        return train_loader, test_loader

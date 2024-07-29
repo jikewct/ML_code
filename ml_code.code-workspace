@@ -27,6 +27,7 @@
 	"settings": {
 		"editor.defaultFormatter": "ms-python.black-formatter",
 		"terminal.integrated.shellIntegration.enabled": false,
+		"copyOnSelect.copyOnMouseSelection": false,
 
 	}
 }

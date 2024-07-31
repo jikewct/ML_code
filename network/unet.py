@@ -16,7 +16,7 @@ class UNet(nn.Module):
         super().__init__()
         img_channels = config.data.img_channels
         base_channels = config.model.base_channels
-        num_classes = config.data.num_classes if config.model.use_labels else None
+        num_classes = config.data.num_classes if config.model.conditional else None
         channel_mults = config.model.channel_mults
         num_res_blocks = config.model.num_res_blocks
         time_emb_dim = config.model.time_emb_dim
@@ -160,7 +160,7 @@ class MMOEUNet(nn.Module):
         super().__init__()
         img_channels = config.data.img_channels
         base_channels = config.model.base_channels
-        num_classes = config.data.num_classes if config.model.use_labels else None
+        num_classes = config.data.num_classes if config.model.conditional else None
         channel_mults = config.model.channel_mults
         num_res_blocks = config.model.num_res_blocks
         time_emb_dim = config.model.time_emb_dim

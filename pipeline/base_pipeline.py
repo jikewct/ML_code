@@ -15,6 +15,7 @@ from accelerate import Accelerator
 from torch import Tensor, optim
 
 from datasets import *
+from lib import tensor_trans
 from models import *
 from optimizer import optimize
 from utils import monitor
@@ -37,8 +38,17 @@ class BasePipeLine(ABC):
         # logging.info(f"device:{config.device}")
         self.config = config
         self.device = self.config.device
-        self.use_labels = self.config.model.use_labels
+        self.conditional = self.config.model.conditional
+        if self.conditional:
+            self.sampling_conditions = self.config.sampling.sampling_conditions
+            self.condition_param = self.config.model.condition
         self.uuid = str(uuid.uuid1())
+        self.init_internal_parameters(config)
+
+    def init_internal_parameters(self, config):
+        conditinal = "cond" if self.conditional else "uncond"
+        self.ckpt_path = f"{self.config.training.ckpt_dir}/{self.config.training.project_name}/{self.config.model.name}/{self.config.model.nn_name}/{self.config.data.dataset}/{self.config.data.img_size[0]}X{self.config.data.img_size[1]}/{conditinal}"
+        os.makedirs(self.ckpt_path, exist_ok=True)
 
     def init_seed(self):
         accelerate.utils.set_seed(self.config.seed, device_specific=True)
@@ -99,19 +109,17 @@ class BasePipeLine(ABC):
     #     logging.info(f"save model checkpoint success! {filepath}")
 
     def save_state(self):
-        path = f"{self.config.training.ckpt_dir}/{self.config.training.project_name}/{self.config.model.name}/{self.config.model.nn_name}/{self.config.data.dataset}/{self.config.data.img_size[0]}X{self.config.data.img_size[1]}/"
-        os.makedirs(path, exist_ok=True)
         self.set_train_mode()  ## for lora model to split parameters
         ## save step
         state = self.state_dict()
-        torch.save(state, os.path.join(path, f"{self.current_train_step}.ckpt"))
+        torch.save(state, os.path.join(self.ckpt_path, f"{self.current_train_step}.ckpt"))
         ## save network file for load checkpoint  or import easier
-        torch.save(state["network"], os.path.join(path, f"{self.current_train_step}-network.pth"))
-        logging.info(f"save state success! path: {path}, step: {self.current_train_step}")
+        torch.save(state["network"], os.path.join(self.ckpt_path, f"{self.current_train_step}-network.pth"))
+        logging.info(f"save state success! path: {self.ckpt_path}, step: {self.current_train_step}")
 
     def load_state(self, step, path=None):
         if path is None:
-            path = f"{self.config.training.ckpt_dir}/{self.config.training.project_name}/{self.config.model.name}/{self.config.model.nn_name}/{self.config.data.dataset}/{self.config.data.img_size[0]}X{self.config.data.img_size[1]}/"
+            path = self.ckpt_path
         state = torch.load(os.path.join(path, f"{step}.ckpt"))
         self.current_train_epoch, self.current_train_step, self.uuid = state["pipeline"]
         self.optimizer.load_state_dict(state["optimizer"])
@@ -123,7 +131,7 @@ class BasePipeLine(ABC):
         path = self.config.training.resume_path
         step = self.config.training.resume_step
         if path is None or path.rstrip() == "":
-            path = f"{self.config.training.ckpt_dir}/{self.config.training.project_name}/{self.config.model.name}/{self.config.model.nn_name}/{self.config.data.dataset}/{self.config.data.img_size[0]}X{self.config.data.img_size[1]}/"
+            path = self.ckpt_path
         if not os.path.exists(path):
             logging.warn(f"resume path not found :{path}")
             return
@@ -181,7 +189,8 @@ class BasePipeLine(ABC):
     def train_step(self, x, y):
         x, y = x.to(self.device), y.to(self.device)
 
-        if self.use_labels:
+        if self.conditional:
+            y = self.condition_transform(y)
             loss = self.model(x, y)
         else:
             loss = self.model(x)
@@ -192,6 +201,11 @@ class BasePipeLine(ABC):
         self.lr_scheduler.step()
         self.model.update_ema()
         return loss
+
+    def condition_transform(self, y):
+        if self.condition_param.cfg:
+            y = tensor_trans.mask_sample_in_batch_by_cond(y, self.condition_param.p_cond)
+        return y
 
     def after_train_step(self):
         step = self.current_train_step
@@ -240,7 +254,7 @@ class BasePipeLine(ABC):
     def eval_step(self, x, y):
         x, y = x.to(self.device), y.to(self.device)
 
-        if self.use_labels:
+        if self.conditional:
             loss = self.model(x, y)
         else:
             loss = self.model(x)
@@ -367,11 +381,22 @@ class BasePipeLine(ABC):
 
     def sample(self, num=10):
         self.set_sampling_mode()
-        if self.use_labels:
-            y = torch.arange(self.config.data.num_classes, device=self.device)
+        if self.conditional:
+            if self.sampling_conditions is None:
+                y = torch.randint(0, self.config.data.num_classes, [num], device=self.device)
+            else:
+                label_length = len(self.sampling_conditions)
+                y = self.sampling_conditions * (num // label_length + 1)
+                if self.condition_param.condition_type == "class":
+                    y = torch.as_tensor(y[:num], dtype=torch.int, device=self.device)
+                else:
+                    y = self.model.encode_text_condition(y[:num])
+            # logging.info(f"y shape:{y.shape}")
             samples = self.model.sample(num, y)
         else:
             samples = self.model.sample(num)
+        ## model sample output : latent feature or img
+        ## img : shape( B C H W) , range(-1, 1)
         samples = self.unpreprocess_after_sample(samples)
         samples = ((samples + 1) / 2).clamp(0, 1).permute(0, 2, 3, 1).cpu().numpy()
         return samples

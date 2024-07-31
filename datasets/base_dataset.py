@@ -41,6 +41,7 @@ class BaseDataset(object):
         imgCenter = tforms.Lambda(lambda x: 2 * x - 1)
         self.trans = tforms.Compose([tforms.ToTensor(), imgCenter])
         self.resize_trans = lambda img_size: tforms.Compose([tforms.Resize(img_size), tforms.ToTensor(), imgCenter])
+        self.center_crop = lambda img_size: tforms.Compose([tforms.CenterCrop(img_size), tforms.ToTensor(), imgCenter])
 
     def init_dataset(self, **kargs):
         pass
@@ -63,7 +64,7 @@ class BaseDataset(object):
     def states(self):
         state = {"train_images": len(self.train_dataset), "val_images": len(self.val_dataset)}
         for key, val in self.__dict__.items():
-            if isinstance(val, (int, float, str, bool, bytes, bytearray, complex)):
+            if isinstance(val, (int, float, str, bool, bytes, bytearray, complex, tuple)):
                 state[key] = val
         return state
 

@@ -19,3 +19,5 @@ from .cifar10 import *
 from .dataset_factory import *
 from .lsun_church import *
 from .mnist import *
+from .mscoco import *
+from .mscoco_feature import *

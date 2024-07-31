@@ -32,6 +32,7 @@ def default_configs():
         method="",
         enable_debug=False,
         log_freq=10,
+        sampling_conditions=None,  # None or List()
     )
     n(defualt_config, "sampling", "ode").update(
         sampling_steps=50,
@@ -86,6 +87,10 @@ def default_configs():
         # all or one of (cat|dog|wild)
         img_class="cat"
     )
+    n(defualt_config, "data", "mscoco").update(
+        year="2017",
+    )
+    n(defualt_config, "data", "mscoco_32x32_feature").update()
     n(defualt_config, "data", "afhq_32x32_feature").update()
 
     # model
@@ -97,8 +102,13 @@ def default_configs():
         enable_ema=True,
         loss_type="l2",
         ###network config
-        use_labels=False,
+        conditional=False,
         enable_lora=False,
+    )
+    n(defualt_config, "model", "condition").update(
+        cfg=True,
+        p_cond=0.1,
+        condition_type="class",  ###class or text
     )
     n(defualt_config, "model", "flowMatching").update(
         num_scales=1000,
@@ -106,7 +116,9 @@ def default_configs():
     n(defualt_config, "model", "ddpm").update()
     n(defualt_config, "model", "ddim").update()
     n(defualt_config, "model", "fm_ldm").update()
-
+    n(defualt_config, "model", "clip").update(
+        pretrained_path="/home/jikewct/public/jikewct/Model/clip-vit-large-patch14",
+    )
     n(defualt_config, "model", "uvit").update(
         img_size=defualt_config.data.img_size[0],
         patch_size=2,
@@ -118,6 +130,22 @@ def default_configs():
         qkv_bias=False,
         mlp_time_embed=False,
         num_classes=-1,
+        use_checkpoint=defualt_config.model.grad_checkpoint,
+    )
+
+    n(defualt_config, "model", "uvit_t2i").update(
+        # cacl from autoencoder_kl ch_mult config
+        img_size=defualt_config.data.img_size[0],
+        patch_size=2,
+        in_chans=defualt_config.data.img_channels,
+        embed_dim=512,
+        depth=16,
+        num_heads=8,
+        mlp_ratio=4,
+        qkv_bias=False,
+        mlp_time_embed=False,
+        clip_dim=768,
+        num_clip_token=77,
         use_checkpoint=defualt_config.model.grad_checkpoint,
     )
 
@@ -175,18 +203,6 @@ def default_configs():
     n(defualt_config, "lr_scheduler", "customized").update(
         warmup_steps=5000,
     )
-
-    # optimization
-
-    # optim.decay_num = 2
-    # optim.weight_decay = 0.1
-    # optim.optimizer = "Adam"
-    # optim.lr = 2e-4
-    # optim.beta1 = 0.9
-    # optim.eps = 1e-8
-    # optim.warmup = 5000
-    # optim.grad_clip = 1.0
-    # optim.amsgrad = False
 
     defualt_config.seed = 42
     defualt_config.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")

@@ -105,7 +105,7 @@ class FlowMatching(BaseModel):
             (self.EPS, self.T),
             self.to_flattened_numpy(x),
             method="RK45",
-            args=(shape, device, use_ema),
+            args=(y, shape, device, use_ema),
             **self.sample_config,
         )
         nfe = solution.nfev
@@ -113,10 +113,10 @@ class FlowMatching(BaseModel):
         x = torch.tensor(solution.y[:, -1]).reshape(shape).to(device).type(torch.float32)
         return x.detach()
 
-    def ode_func(self, t, x, shape, device, use_ema):
+    def ode_func(self, t, x, y, shape, device, use_ema):
         x = self.from_flattened_numpy(x, shape).to(device).type(torch.float32)
         vec_t = torch.ones(shape[0], device=device) * t
-        speed_vf, _ = self.predict(x, vec_t, use_ema=use_ema)
+        speed_vf, _ = self.predict(x, vec_t, y, use_ema=use_ema)
         return self.to_flattened_numpy(speed_vf)
 
     def prior_sampling(self, batch_size, device):

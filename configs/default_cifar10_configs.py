@@ -95,7 +95,6 @@ def get_default_configs():
         # num_res_blocks=2,
         enable_ema=True,
         loss_type="l2",
-        use_labels=False,
         # embedding_type="fourier",
         # ode=False,
         enable_lora=False,

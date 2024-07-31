@@ -28,6 +28,7 @@ class TrainDiffusion:
                 dir="./data/",
                 project=config.training.project_name,
                 config=vars(config),
+                resume="allow",
                 id=pipeline.uuid,
                 name=config.data.dataset
                 + "-"

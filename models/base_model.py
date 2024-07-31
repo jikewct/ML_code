@@ -186,7 +186,7 @@ class BaseModel(ABC):
 
     @abstractmethod
     @torch.no_grad()
-    def sample(self, batch_size, y=None, use_ema=True):
+    def sample(self, batch_size, y=None, use_ema=True) -> torch.Tensor:
         pass
 
     @abstractmethod
@@ -195,6 +195,9 @@ class BaseModel(ABC):
 
     @abstractmethod
     def marginal_std(self, t):
+        pass
+
+    def encode_text_condition(self, text_condition):
         pass
 
     @property

@@ -97,7 +97,7 @@ def get_default_configs():
     model.enable_ema = True
 
     model.loss_type = "l2"
-    model.use_labels = False
+    model.conditional = False
 
     model.embedding_type = "fourier"
     model.ode = False
@@ -117,8 +117,6 @@ def get_default_configs():
     optim.amsgrad = False
 
     config.seed = 42
-    config.device = (
-        torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-    )
+    config.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     config.pipeline = ""
     return config

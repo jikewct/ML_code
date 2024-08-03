@@ -1,5 +1,7 @@
 import torch.nn as nn
-from transformers import CLIPTokenizer, CLIPTextModel
+from transformers import CLIPTextModel, CLIPTokenizer
+
+from network import net_factory
 
 
 class AbstractEncoder(nn.Module):
@@ -10,12 +12,14 @@ class AbstractEncoder(nn.Module):
         raise NotImplementedError
 
 
+@net_factory.register_network(name="frozen_clip_embedder")
 class FrozenCLIPEmbedder(AbstractEncoder):
     """Uses the CLIP transformer encoder for text (from Hugging Face)"""
-    def __init__(self, version="openai/clip-vit-large-patch14", device="cuda", max_length=77):
+
+    def __init__(self, pretrained_path="openai/clip-vit-large-patch14", device="cuda", max_length=77):
         super().__init__()
-        self.tokenizer = CLIPTokenizer.from_pretrained(version)
-        self.transformer = CLIPTextModel.from_pretrained(version)
+        self.tokenizer = CLIPTokenizer.from_pretrained(pretrained_path)
+        self.transformer = CLIPTextModel.from_pretrained(pretrained_path)
         self.device = device
         self.max_length = max_length
         self.freeze()
@@ -26,8 +30,15 @@ class FrozenCLIPEmbedder(AbstractEncoder):
             param.requires_grad = False
 
     def forward(self, text):
-        batch_encoding = self.tokenizer(text, truncation=True, max_length=self.max_length, return_length=True,
-                                        return_overflowing_tokens=False, padding="max_length", return_tensors="pt")
+        batch_encoding = self.tokenizer(
+            text,
+            truncation=True,
+            max_length=self.max_length,
+            return_length=True,
+            return_overflowing_tokens=False,
+            padding="max_length",
+            return_tensors="pt",
+        )
         tokens = batch_encoding["input_ids"].to(self.device)
         outputs = self.transformer(input_ids=tokens)
 

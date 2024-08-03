@@ -27,6 +27,7 @@ def get_config():
         eval_freq=1000,
         test_metric_freq=50000,
         resume=True,
+        resume_path="",
         # model_checkpoint="./data/checkpoints/generative_model/flowMatching/unet-cifar10-65000-model",
     )
 

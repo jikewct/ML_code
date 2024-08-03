@@ -15,7 +15,7 @@ sys.path.append(".")
 sys.path.append("..")
 os.chdir("/home/jikewct/public/jikewct/Repos/ml_code")
 from configs.config_utils import c
-from configs.flow_matching.mnist_unet import get_config
+from configs.ldm.cond.mscoco_vpsde_uvit_t2i import get_config
 
 
 def test_config(argv):

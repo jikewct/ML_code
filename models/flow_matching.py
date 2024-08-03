@@ -9,8 +9,7 @@ import torch.nn.functional as F
 import tqdm
 from scipy import integrate
 
-from network import lora_ncsnpp, ncsnpp, ncsnv2, uvit
-from network.layers import layer_utils
+from network import *
 
 from . import model_factory, model_utils
 from .base_model import BaseModel
@@ -25,9 +24,9 @@ class FlowMatching(BaseModel):
 
     def init_parameters(self, config):
         super().init_parameters(config)
-        self.sample_method = config.sampling.method
-        self.sampling_steps = config.sampling.sampling_steps
-        self.sample_config = config.sampling[self.sample_method]
+        # self.sample_method = config.sampling.method
+        # # self.sampling_steps = config.sampling.sampling_steps
+        # self.sample_config = config.sampling[self.sample_method]
         # self.num_scales = config.model.num_scales
         # self.rtol = config.sampling.rtol
         # self.atol = config.sampling.atol
@@ -69,35 +68,39 @@ class FlowMatching(BaseModel):
         x_t = (1 - t) * x_0 + t * x
         return x_t, x_0
 
-    def predict(self, x, t, y=None, use_ema=False):
+    # def predict(self, x, t, y=None, use_ema=False):
+    #     scaled_t = t * self.CNT_SCALE
+    #     speed_vf, extra_info = super().predict(x, scaled_t, y, use_ema)
+    #     if self.mode == model_utils.ModeEnum.SAMPLING:
+    #         self.debug_sampling(x, t, speed_vf, extra_info)
+    #     return speed_vf, extra_info
+
+    def before_predict(self, x, t, y, use_ema):
         scaled_t = t * self.CNT_SCALE
-        speed_vf, extra_info = super().predict(x, scaled_t, y, use_ema)
-        if self.mode == model_utils.ModeEnum.SAMPLING:
-            self.debug_sampling(x, t, speed_vf, extra_info)
-        return speed_vf, extra_info
+        return super().before_predict(x, scaled_t, y, use_ema)
 
     @torch.no_grad()
-    def sample(self, batch_size, y=None, use_ema=True):
-        if self.sample_method == "rk45":
-            return self.rk45_sample(batch_size, self.device, y, use_ema)
-        elif self.sample_method == "ode":
-            return self.ode_sample(batch_size, self.device, y, use_ema, sampling_steps=self.sampling_steps)
+    def sample(self, batch_size, y=None, use_ema=True, uncond_y=None, guidance_scale=0.0):
+        if self.sampling_method == "rk45":
+            return self.rk45_sample(batch_size, self.device, y, use_ema, uncond_y, guidance_scale, **self.sampling_config)
+        elif self.sampling_method == "ode":
+            return self.ode_sample(batch_size, self.device, y, use_ema, uncond_y, guidance_scale, **self.sampling_config)
         return self.ode_sample(batch_size, self.device, y, use_ema)
 
     @torch.no_grad()
-    def ode_sample(self, batch_size, device, y=None, use_ema=True, sampling_steps=10):
+    def ode_sample(self, batch_size, device, y, use_ema, uncond_y, guidance_scale, sampling_steps):
         time_steps = np.linspace(self.EPS, self.T, sampling_steps)
         step_size = 1 / sampling_steps
         x = self.prior_sampling(batch_size, device)
         for t_index in tqdm.tqdm(range(sampling_steps), desc="sampling level", total=sampling_steps, leave=False):
             num_t = t_index / sampling_steps * (self.T - self.EPS) + self.EPS
             t = torch.ones((batch_size,), device=x.device) * num_t
-            predict_vf, _ = self.predict(x, t, y, use_ema=use_ema)
+            predict_vf, _ = self.sampling_predict(x, t, y, use_ema, uncond_y, guidance_scale)
             x = x + step_size * predict_vf
         return x.detach()
 
     @torch.no_grad()
-    def rk45_sample(self, batch_size, device, y=None, use_ema=True):
+    def rk45_sample(self, batch_size, device, y, use_ema, uncond_y, guidance_scale, **kargs):
         x = self.prior_sampling(batch_size, device).detach().clone()
         shape = x.shape
         solution = integrate.solve_ivp(
@@ -105,18 +108,18 @@ class FlowMatching(BaseModel):
             (self.EPS, self.T),
             self.to_flattened_numpy(x),
             method="RK45",
-            args=(y, shape, device, use_ema),
-            **self.sample_config,
+            args=(y, shape, device, use_ema, uncond_y, guidance_scale),
+            **kargs,
         )
         nfe = solution.nfev
         logging.info(f"sample nfe:{nfe}")
         x = torch.tensor(solution.y[:, -1]).reshape(shape).to(device).type(torch.float32)
         return x.detach()
 
-    def ode_func(self, t, x, y, shape, device, use_ema):
+    def ode_func(self, t, x, y, shape, device, use_ema, uncond_y, guidance_scale):
         x = self.from_flattened_numpy(x, shape).to(device).type(torch.float32)
-        vec_t = torch.ones(shape[0], device=device) * t
-        speed_vf, _ = self.predict(x, vec_t, y, use_ema=use_ema)
+        t = torch.ones(shape[0], device=device) * t
+        speed_vf, _ = self.sampling_predict(x, t, y, use_ema, uncond_y, guidance_scale)
         return self.to_flattened_numpy(speed_vf)
 
     def prior_sampling(self, batch_size, device):

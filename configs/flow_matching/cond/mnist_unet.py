@@ -47,6 +47,13 @@ def get_config():
         num_res_blocks=2,
         conditional=True,
     )
+    c(config, "model", "condition").update(
+        cfg=True,
+        p_cond=0.1,
+        condition_type="class",  ###class or text
+        cond_embedder_name="",
+        empty_latent_path="",
+    )
     c(config, "model", "flowMatching").update(
         num_scales=1000,
     )
@@ -56,7 +63,8 @@ def get_config():
         method="rk45",
         sampling_steps=50,
         denoise=True,
-        sampling_conditions=[0, 1, 2],
+        sampling_conditions=[6, 8, 9],
+        guidance_scale=1.0,
     )
     c(config, "sampling", "rk45").update(
         rtol=1e-3,
@@ -65,7 +73,7 @@ def get_config():
 
     c(config, "test").update(
         batch_size=10,
-        num_samples=1,
+        num_samples=5,
     )
 
     config.pipeline = "FlowMatchingPipeLine"

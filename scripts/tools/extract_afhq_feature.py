@@ -11,14 +11,16 @@ import torch.nn.functional as F
 import tqdm
 from absl import app
 
+from network.pre_trained import autoencoder_kl
+
 sys.path.append(".")
 sys.path.append("..")
 os.chdir("/home/jikewct/public/jikewct/Repos/ml_code")
 from configs.config_utils import c
-from configs.ldm.afhq_cat_ae_uvit import get_config
+from configs.ldm.uncond.afhq_cat_ae_uvit import get_config
 from datasets import dataset_factory, dataset_utils
 from models import FlowMatching, model_factory, model_utils
-from network import autoencoder_kl, net_factory
+from network import net_factory
 from network.layers import layer_utils
 
 
@@ -33,7 +35,7 @@ def extract_feature(argv):
     )
     c(config.data, "afhq").update(img_class="cat")
     print(config.model.nn_name, config.data)
-    autoencoder = net_factory.create_network(config, "autoencoder_name").to(config.device)
+    autoencoder = net_factory.create_network(config.model[config.model.name], "autoencoder_name").to(config.device)
     dataset = dataset_factory.create_dataset(config)
     print(dataset.states())
     train_loader, test_loader = dataset.get_dataloader(16)

@@ -28,7 +28,9 @@ def c(config, *keys):
         if not hasattr(current_defualt_config, key):
             raise KeyError(f"not found default config, key:{key}")
         current_defualt_config = current_defualt_config[key]
-        if not hasattr(config, key):
+        # if key == "condition":
+        #     #print("===\n", current_config)
+        if not hasattr(current_config, key):
             if not isinstance(current_defualt_config, ml_collections.ConfigDict):
                 current_config[key] = current_defualt_config
                 break

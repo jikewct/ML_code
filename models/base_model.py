@@ -13,8 +13,7 @@ import tqdm
 import wandb
 from accelerate import Accelerator
 
-from network import ncsnv2, net_factory
-from network.layers import layer_utils
+from network import *
 from utils import monitor
 
 from . import model_utils
@@ -38,6 +37,8 @@ class BaseModel(ABC):
         self.loss_type = config.model.loss_type
         self.log_to_wandb = config.training.log_to_wandb
         self.mode = model_utils.ModeEnum.TRAIN
+        self.sampling_method = config.sampling.method
+        self.sampling_config = config.sampling[self.sampling_method]
 
     def init_debug_info(self, config):
         self.sampling_enable_debug = config.sampling.enable_debug
@@ -64,6 +65,15 @@ class BaseModel(ABC):
         self.enable_ema = config.model.enable_ema
         if self.enable_ema:
             self.init_ema(config)
+        self.conditional = config.model.conditional
+        if self.conditional:
+            self.condition_type = config.model.condition.condition_type
+            if self.condition_type == "text":
+                self.init_cond_embedder(config)
+
+    def init_cond_embedder(self, config):
+        self.cond_embedder = net_factory.create_network(config.model.condition, "cond_embedder_name").to(config.device)
+        # self.clip = clip.FrozenCLIPEmbedder(config.model.clip.pretrained_path).to(config.device)
 
     def init_ema(self, config):
         ema_config = config.model.ema
@@ -158,13 +168,42 @@ class BaseModel(ABC):
         return out.reshape(b, *((1,) * (len(x_shape) - 1)))
 
     def predict(self, x, t, y=None, use_ema=False):
-        if use_ema and self.enable_ema:
-            output = self.ema_network(x, t, y)
+        _x, _t, _y, _use_ema = self.before_predict(x, t, y, use_ema)
+        # logging.info(f"t_shape:{_t.shape}, t_max:{_t.max()}, t_min:{_t.min()}")
+        if _use_ema and self.enable_ema:
+            output = self.ema_network(_x, _t, _y)
         else:
-            output = self.network(x, t, y)
+            output = self.network(_x, _t, _y)
         if isinstance(output, tuple):
-            return output[0], output[1]
-        return output, {}
+            preds, extra_info = output[0], output[1]
+        else:
+            preds, extra_info = output, {}
+        preds, extra_info = self.after_predict(x, t, y, use_ema, preds, extra_info)
+        return preds, extra_info
+
+    def before_predict(self, x, t, y, use_ema):
+        return x, t, y, use_ema
+
+    def after_predict(self, x, t, y, user_ema, preds, extra_info):
+        if self.mode == model_utils.ModeEnum.SAMPLING:
+            self.debug_sampling(x, t, preds, extra_info)
+        return preds, extra_info
+
+    def sampling_predict(self, x, t, y, use_ema, uncond_y, guidance_scale):
+        if uncond_y is None or guidance_scale <= 1e-4:
+            preds, extra_info = self.predict(x, t, y, use_ema=use_ema)
+        else:
+            preds, extra_info = self.cfg_predict(x, t, y, use_ema, uncond_y, guidance_scale)
+        return preds, extra_info
+
+    def cfg_predict(self, x, t, y, use_ema, uncond_y, guidance_scale):
+        x_in = torch.cat([x] * 2)
+        t_in = torch.cat([t] * 2)
+        y_in = torch.cat([uncond_y, y])
+        speed_vf_tmp, extra_info = self.predict(x_in, t_in, y_in, use_ema=use_ema)
+        speed_vf_uncond, speed_vf_cond = speed_vf_tmp.chunk(2)
+        speed_vf = speed_vf_cond + guidance_scale * (speed_vf_cond - speed_vf_uncond)
+        return speed_vf, extra_info
 
     @abstractmethod
     def forward(self, x, y=None):
@@ -184,9 +223,12 @@ class BaseModel(ABC):
         losses = 1 / 2 * ((preds - targets) ** 2).sum(dim=1)
         return losses
 
+    def encode_text_condition(self, text_condition):
+        return self.cond_embedder.encode(text_condition)
+
     @abstractmethod
     @torch.no_grad()
-    def sample(self, batch_size, y=None, use_ema=True) -> torch.Tensor:
+    def sample(self, batch_size, y=None, use_ema=True, uncond_y=None, guidance_scale=0.0) -> torch.Tensor:
         pass
 
     @abstractmethod
@@ -195,9 +237,6 @@ class BaseModel(ABC):
 
     @abstractmethod
     def marginal_std(self, t):
-        pass
-
-    def encode_text_condition(self, text_condition):
         pass
 
     @property

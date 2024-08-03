@@ -20,11 +20,11 @@ class MsCOCO_32X32_Feature(BaseFeatureDataset):
         super().__init__(**kargs)
 
     def init_dataset(self, **kargs):
-        self.train_dataset = MSCOCO_32X32_Feature(root_path=os.path.join(self.root_path, "train"))
-        self.val_dataset = MSCOCO_32X32_Feature(root_path=os.path.join(self.root_path, "val"))
+        self.train_dataset = MSCOCO_32X32_FeatureDataset(root_path=os.path.join(self.root_path, "train"))
+        self.val_dataset = MSCOCO_32X32_FeatureDataset(root_path=os.path.join(self.root_path, "val"))
 
 
-class MSCOCO_32X32_Feature(BaseFeature):
+class MSCOCO_32X32_FeatureDataset(BaseFeature):
     def __init__(self, root_path):
         super().__init__(root_path)
 

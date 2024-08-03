@@ -23,15 +23,16 @@ from configs.default_mscoco_configs import get_default_configs
 def get_config():
     config = get_default_configs()
     c(config, "training").update(
-        batch_size=32,
+        batch_size=64,
         epochs=10000,
         snapshot_freq=500,
         log_freq=50,
-        eval_freq=500,
-        test_metric_freq=50000,
-        resume=True,
+        eval_freq=50,
+        test_metric_freq=1000000,
+        resume=False,
+        continuous=False,
         # resume_path="/home/jikewct/public/jikewct/Repos/ml_code/data/checkpoints/generative_model/fm_ldm/uvit/afhq_32x32_feature/32X32",
-        # model_checkpoint="./data/checkpoints/generative_model/flowMatching/uvit/afhq/96X96/30-network.pth",
+        model_checkpoint="/home/jikewct/public/jikewct/Model/uvit/mscoco_uvit_small.pth",
     )
     c(config, "data").update(
         dataset="mscoco_32x32_feature",
@@ -41,22 +42,31 @@ def get_config():
     )
     c(config, "data", "mscoco_32x32_feature").update()
     c(config, "model").update(
-        name="fm_ldm",
+        name="vpsde_ldm",
         nn_name="uvit_t2i",
-        autoencoder_name="autoencoder_kl",
         conditional=True,
         grad_checkpoint=True,
     )
     c(config, "model", "condition").update(
         condition_type="text",
+        cond_embedder_name="frozen_clip_embedder",
         cfg=True,
         p_cond=0.1,
+        empty_latent_path="/home/jikewct/Dataset/coco2017/coco_256_feature/empty_latent.npy",
     )
-
-    c(config, "model", "fm_ldm").update()
-    c(config, "model", "clip").update(
+    c(config, "model", "ldm").update(
+        autoencoder_name="frozen_autoencoder_kl",
+    )
+    c(config, "model", "vpsde_ldm").update(
+        schedule="sd",
+        num_scales=1000,
+        beta_min=0.00085,
+        beta_max=0.0120,
+    )
+    c(config, "model", "condition", "frozen_clip_embedder").update(
         pretrained_path="/home/jikewct/public/jikewct/Model/clip-vit-large-patch14",
     )
+
     c(config, "model", "uvit_t2i").update(
         # cacl from autoencoder_kl ch_mult config
         img_size=config.data.img_size[0],
@@ -72,7 +82,7 @@ def get_config():
         num_clip_token=77,
         use_checkpoint=config.model.grad_checkpoint,
     )
-    c(config, "model", "autoencoder_kl").update(
+    c(config, "model", "ldm", "frozen_autoencoder_kl").update(
         double_z=True,
         z_channels=4,
         resolution=256,
@@ -87,11 +97,14 @@ def get_config():
         pretrained_path="/home/jikewct/public/jikewct/Model/stable_diffusion/stable-diffusion/autoencoder_kl.pth",
         scale_factor=0.23010,
     )
-
+    c(config, "test").update(
+        batch_size=5,
+        num_samples=1,
+        save_path="./data/test/",
+    )
     c(config, "sampling").update(
         log_freq=1,
-        method="rk45",
-        sampling_steps=50,
+        method="dpm_solver",  # ode, rk45, pc, dpm_solver
         denoise=True,
         sampling_conditions=[
             "A green train is coming down the tracks.",
@@ -100,13 +113,32 @@ def get_config():
             "A group of elephants walking in muddy water.",
             "A living area with a television and a table.",
         ],
+        guidance_scale=1.0,
     )
     c(config, "sampling", "rk45").update(
         rtol=1e-3,
         atol=1e-3,
     )
-    c(config, "sampling", "ode").update()
-
+    c(config, "sampling", "ode").update(
+        sampling_steps=50,
+    )
+    c(config, "sampling", "dpm_solver").update(
+        sampling_steps=50,
+    )
+    c(config, "sampling", "pc").update(
+        predictor="reversediffusion",  # euler,reversediffusion,ancestralsampling,""
+        corrector="langevin",  # ald,langevin, ""
+        n_step_each=1,
+        snr=0.16,
+    )
+    c(config, "optim").update(
+        optimizer="adamw",
+    )
+    c(config, "optim", "adamw").update(
+        lr=0.0002,
+        weight_decay=0.03,
+        betas=(0.99, 0.999),
+    )
     c(config, "lr_scheduler").update(
         name="customized",
     )

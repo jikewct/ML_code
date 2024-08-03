@@ -53,12 +53,16 @@ def get_network(name):
 
 def create_network(config, key="nn_name") -> nn.Module:
     """Create the score model."""
-    network_name = config.model[key]
-    if hasattr(config.model, network_name):
-        net = get_network(network_name)(**config.model[network_name])
+    if hasattr(config, key):
+        network_name = config[key]
+        net = get_network(network_name)(**config[network_name])
     else:
-        net = get_network(network_name)(config)
-    net = net.to(config.device)
+        network_name = config.model[key]
+        if hasattr(config.model, network_name):
+            net = get_network(network_name)(**config.model[network_name])
+        else:
+            net = get_network(network_name)(config)
+    # net = net.to(config.device)
     num_params = 0
     for p in net.parameters():
         num_params += p.numel()

@@ -5,11 +5,13 @@ import uuid
 from abc import ABC, abstractmethod
 
 import accelerate
+import einops
 import imageio
 import numpy as np
 import pytorch_fid
 import pytorch_fid.fid_score
 import torch
+import tqdm
 import wandb
 from accelerate import Accelerator
 from torch import Tensor, optim
@@ -41,11 +43,17 @@ class BasePipeLine(ABC):
         self.conditional = self.config.model.conditional
         if self.conditional:
             self.sampling_conditions = self.config.sampling.sampling_conditions
+            self.guidance_scale = self.config.sampling.guidance_scale
             self.condition_param = self.config.model.condition
-        self.uuid = str(uuid.uuid1())
-        self.init_internal_parameters(config)
+            self.empty_latent = None
+            if self.condition_param.empty_latent_path != "":
+                self.empty_latent = torch.from_numpy(np.load(self.condition_param.empty_latent_path)).to(self.device)
+                # logging.info(self.empty_latent.shape)
 
-    def init_internal_parameters(self, config):
+        self.uuid = str(uuid.uuid1())
+        self.init_internal_parameters()
+
+    def init_internal_parameters(self):
         conditinal = "cond" if self.conditional else "uncond"
         self.ckpt_path = f"{self.config.training.ckpt_dir}/{self.config.training.project_name}/{self.config.model.name}/{self.config.model.nn_name}/{self.config.data.dataset}/{self.config.data.img_size[0]}X{self.config.data.img_size[1]}/{conditinal}"
         os.makedirs(self.ckpt_path, exist_ok=True)
@@ -181,16 +189,14 @@ class BasePipeLine(ABC):
     def before_train_step(self, x, y):
         self.set_train_mode()
         self.log_time_meter.start()
-        return self.preprocess_before_train_step(x, y)
-
-    def preprocess_before_train_step(self, x, y):
+        x, y = x.to(self.device), y.to(self.device)
+        if self.conditional:
+            y = self.condition_transform(y)
         return x, y
 
     def train_step(self, x, y):
-        x, y = x.to(self.device), y.to(self.device)
 
         if self.conditional:
-            y = self.condition_transform(y)
             loss = self.model(x, y)
         else:
             loss = self.model(x)
@@ -204,7 +210,8 @@ class BasePipeLine(ABC):
 
     def condition_transform(self, y):
         if self.condition_param.cfg:
-            y = tensor_trans.mask_sample_in_batch_by_cond(y, self.condition_param.p_cond)
+            replaced_data = self.empty_latent if self.condition_param.condition_type == "text" else torch.zeros_like(y)
+            y = tensor_trans.replace_sample_by_cond(y, replaced_data, self.condition_param.p_cond)
         return y
 
     def after_train_step(self):
@@ -249,7 +256,7 @@ class BasePipeLine(ABC):
         self.eval_time_meter.start()
 
     def before_eval_step(self, x, y):
-        return self.preprocess_before_train_step(x, y)
+        return x, y
 
     def eval_step(self, x, y):
         x, y = x.to(self.device), y.to(self.device)
@@ -379,20 +386,34 @@ class BasePipeLine(ABC):
     def get_lr(self):
         return self.optimizer.param_groups[0]["lr"]
 
+    def generate_sample_condition(self, num):
+        # logging.info(self.sampling_conditions)
+        # logging.info(self.condition_param)
+        if self.sampling_conditions is None:
+            y = torch.randint(0, self.config.data.num_classes, [num], device=self.device)
+            if self.condition_param.cfg:
+                uncond_y = torch.zeros_like(y)
+        else:
+            label_length = len(self.sampling_conditions)
+            y = self.sampling_conditions * (num // label_length + 1)
+            if self.condition_param.condition_type == "class":
+                y = torch.as_tensor(y[:num], dtype=torch.int, device=self.device)
+                uncond_y = torch.zeros_like(y)
+            else:
+                y = self.model.encode_text_condition(y[:num])
+                uncond_y = einops.repeat(self.empty_latent, "1 L D -> B L D", B=num)
+        # logging.info(y.shape, uncond_y.shape)
+        return y, uncond_y
+
     def sample(self, num=10):
         self.set_sampling_mode()
         if self.conditional:
-            if self.sampling_conditions is None:
-                y = torch.randint(0, self.config.data.num_classes, [num], device=self.device)
-            else:
-                label_length = len(self.sampling_conditions)
-                y = self.sampling_conditions * (num // label_length + 1)
-                if self.condition_param.condition_type == "class":
-                    y = torch.as_tensor(y[:num], dtype=torch.int, device=self.device)
-                else:
-                    y = self.model.encode_text_condition(y[:num])
+            y, uncond_y = self.generate_sample_condition(num)
             # logging.info(f"y shape:{y.shape}")
-            samples = self.model.sample(num, y)
+            samples = self.model.sample(num, y=y, uncond_y=uncond_y, guidance_scale=self.guidance_scale)
+            # if self.condition_param.cfg and self.sample_scale >= 1e-4:
+            #     uncond_samples = self.model.sample(num, torch.zeros_like(y))
+            #     samples = samples + self.sample_scale * (samples - uncond_samples)
         else:
             samples = self.model.sample(num)
         ## model sample output : latent feature or img

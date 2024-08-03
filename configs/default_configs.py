@@ -29,10 +29,11 @@ def default_configs():
     )
     # sampling
     n(defualt_config, "sampling").update(
-        method="",
+        method="",  # ode, rk45, pc, dpm_solver
         enable_debug=False,
         log_freq=10,
         sampling_conditions=None,  # None or List()
+        guidance_scale=1.0,
     )
     n(defualt_config, "sampling", "ode").update(
         sampling_steps=50,
@@ -41,7 +42,15 @@ def default_configs():
         rtol=1e-3,
         atol=1e-3,
     )
-
+    n(defualt_config, "sampling", "pc").update(
+        predictor="",  # euler,reversediffusion,ancestralsampling,""
+        corrector="",  # ald,langevin, ""
+        n_step_each=1,
+        snr=0.16,
+    )
+    n(defualt_config, "sampling", "dpm_solver").update(
+        sampling_steps=50,
+    )
     # evaluation
     n(defualt_config, "eval").update(
         begin_ckpt=9,
@@ -102,6 +111,7 @@ def default_configs():
         enable_ema=True,
         loss_type="l2",
         ###network config
+        predict_type="noise",
         conditional=False,
         enable_lora=False,
     )
@@ -109,15 +119,43 @@ def default_configs():
         cfg=True,
         p_cond=0.1,
         condition_type="class",  ###class or text
+        cond_embedder_name="frozen_clip_embedder",
+        empty_latent_path="",
+    )
+    n(defualt_config, "model", "condition", "frozen_clip_embedder").update(
+        pretrained_path="/home/jikewct/public/jikewct/Model/clip-vit-large-patch14",
     )
     n(defualt_config, "model", "flowMatching").update(
         num_scales=1000,
     )
+
     n(defualt_config, "model", "ddpm").update()
     n(defualt_config, "model", "ddim").update()
+    n(defualt_config, "model", "ldm").update(
+        autoencoder_name="frozen_autoencoder_kl",
+    )
     n(defualt_config, "model", "fm_ldm").update()
-    n(defualt_config, "model", "clip").update(
-        pretrained_path="/home/jikewct/public/jikewct/Model/clip-vit-large-patch14",
+    n(defualt_config, "model", "vpsde_ldm").update(
+        # autoencoder_name="frozen_autoencoder_kl",
+        schedule="sd",
+        num_scales=1000,
+        beta_min=0.00085,
+        beta_max=0.0120,
+    )
+    n(defualt_config, "model", "ldm", "frozen_autoencoder_kl").update(
+        double_z=True,
+        z_channels=4,
+        resolution=256,
+        in_channels=3,
+        out_ch=3,
+        ch=128,
+        ch_mult=[1, 2, 4, 4],
+        num_res_blocks=2,
+        attn_resolutions=[],
+        dropout=0.0,
+        embed_dim=4,
+        pretrained_path="/home/jikewct/public/jikewct/Model/stable_diffusion/stable-diffusion/autoencoder_kl.pth",
+        scale_factor=0.18215,
     )
     n(defualt_config, "model", "uvit").update(
         img_size=defualt_config.data.img_size[0],
@@ -149,21 +187,6 @@ def default_configs():
         use_checkpoint=defualt_config.model.grad_checkpoint,
     )
 
-    n(defualt_config, "model", "autoencoder_kl").update(
-        double_z=True,
-        z_channels=4,
-        resolution=256,
-        in_channels=3,
-        out_ch=3,
-        ch=128,
-        ch_mult=[1, 2, 4, 4],
-        num_res_blocks=2,
-        attn_resolutions=[],
-        dropout=0.0,
-        embed_dim=4,
-        pretrained_path="/home/jikewct/public/jikewct/Model/stable_diffusion/stable-diffusion/autoencoder_kl.pth",
-        scale_factor=0.18215,
-    )
     n(defualt_config, "model", "ema").update(
         ema_decay=0.9999,
         ema_start=5000,
@@ -204,7 +227,7 @@ def default_configs():
         warmup_steps=5000,
     )
 
-    defualt_config.seed = 42
+    defualt_config.seed = 1234
     defualt_config.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     defualt_config.pipeline = ""
     return defualt_config

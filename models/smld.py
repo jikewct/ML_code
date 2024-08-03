@@ -9,12 +9,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
 
-from network import ncsnv2
-from network.layers import layer_utils
+from network import *
 
 from . import model_factory, model_utils
 from .base_model import BaseModel
-from .ema import EMA
 
 
 @model_factory.register_model(name="smld")
@@ -65,9 +63,7 @@ class SMLD(BaseModel):
 
     def predict(self, x, t, y=None, use_ema=False):
         preds, extra_info = super().predict(x, t, y, use_ema)
-        if self.predict_type == "noise":
-            used_sigmas = self.sigmas[t].view(x.shape[0], *([1] * len(x.shape[1:])))
-            preds = preds / used_sigmas
+
         # elif self.predict_type == "union":
         #     used_sigmas = self.sigmas[t].view(x.shape[0], *([1] * len(x.shape[1:])))
         #     # sigmid( tau *(x - threshold))
@@ -78,11 +74,17 @@ class SMLD(BaseModel):
             self.debug_sampling(x, t, preds, extra_info)
         return preds, extra_info
 
+    def after_predict(self, x, t, y, user_ema, preds, extra_info):
+        if self.predict_type == "noise":
+            used_sigmas = self.sigmas[t].view(x.shape[0], *([1] * len(x.shape[1:])))
+            preds = preds / used_sigmas
+        return super().after_predict(x, t, y, user_ema, preds, extra_info)
+
     def prior_sampling(self, batch_size, device):
         return torch.randn(batch_size, self.img_channels, *self.img_size, device=device) * self.sigma_max
 
     @torch.no_grad()
-    def sample(self, batch_size, y=None, use_ema=True, steps=1000):
+    def sample(self, batch_size, y=None, use_ema=True, uncond_y=None, guidance_scale=0.0):
         if y is not None and batch_size != len(y):
             raise ValueError("sample batch size different from length of given y")
 
@@ -93,7 +95,7 @@ class SMLD(BaseModel):
             step_size = self.step_lr * (sigma / self.sigmas[-1]) ** 2
             for s in tqdm.tqdm(range(self.n_steps_each), desc="sampling step", total=self.n_steps_each, leave=False):
 
-                grad, extra_info = self.predict(x, t, y, use_ema)
+                grad, extra_info = self.sampling_predict(x, t, y, use_ema, uncond_y, guidance_scale)
                 noise = torch.randn_like(x)
                 x = x + step_size * grad + noise * ((2 * step_size) ** (0.5))
 
@@ -103,21 +105,21 @@ class SMLD(BaseModel):
             x = x + self.sigmas[-1] ** 2 * grad
         return x.detach()
 
-    @torch.no_grad()
-    def sample_diffusion_sequence(self, batch_size, device, y=None, use_ema=True, steps=1000):
-        if y is not None and batch_size != len(y):
-            raise ValueError("sample batch size different from length of given y")
+    # @torch.no_grad()
+    # def sample_diffusion_sequence(self, batch_size, device, y=None, use_ema=True, steps=1000):
+    #     if y is not None and batch_size != len(y):
+    #         raise ValueError("sample batch size different from length of given y")
 
-        x = torch.randn(batch_size, self.img_channels, *self.img_size, device=device)
-        diffusion_sequence = [x.detach()]
+    #     x = torch.randn(batch_size, self.img_channels, *self.img_size, device=device)
+    #     diffusion_sequence = [x.detach()]
 
-        for t in range(steps - 1, -1, -1):
-            t_batch = torch.tensor([t], device=device).repeat(batch_size)
-            x = self.denoising_mean(x, t_batch, y, use_ema)
+    #     for t in range(steps - 1, -1, -1):
+    #         t_batch = torch.tensor([t], device=device).repeat(batch_size)
+    #         x = self.denoising_mean(x, t_batch, y, use_ema)
 
-            if t > 0:
-                x += self.extract(self.posterior_variance, t_batch, x.shape) * torch.randn_like(x)
+    #         if t > 0:
+    #             x += self.extract(self.posterior_variance, t_batch, x.shape) * torch.randn_like(x)
 
-            diffusion_sequence.append(x.detach())
+    #         diffusion_sequence.append(x.detach())
 
-        return diffusion_sequence
+    #     return diffusion_sequence

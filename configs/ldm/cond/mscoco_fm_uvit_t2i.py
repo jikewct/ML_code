@@ -17,51 +17,67 @@
 """Train the original DDPM model."""
 
 from configs.config_utils import *
-from configs.default_afhq_configs import get_default_configs
+from configs.default_mscoco_configs import get_default_configs
 
 
 def get_config():
     config = get_default_configs()
     c(config, "training").update(
-        batch_size=32,
+        batch_size=64,
         epochs=10000,
         snapshot_freq=500,
         log_freq=50,
         eval_freq=500,
-        test_metric_freq=50000,
+        test_metric_freq=1000000,
         resume=True,
         # resume_path="/home/jikewct/public/jikewct/Repos/ml_code/data/checkpoints/generative_model/fm_ldm/uvit/afhq_32x32_feature/32X32",
         # model_checkpoint="./data/checkpoints/generative_model/flowMatching/uvit/afhq/96X96/30-network.pth",
     )
     c(config, "data").update(
-        dataset="afhq_32x32_feature",
+        dataset="mscoco_32x32_feature",
         img_size=(32, 32),
         img_channels=4,
-        root_path="/home/jikewct/public/jikewct/Dataset/afhq/afhq256_features",
+        root_path="/home/jikewct/Dataset/coco2017/coco_256_feature",
     )
-    c(config, "data", "afhq_32x32_feature").update()
+    c(config, "data", "mscoco_32x32_feature").update()
     c(config, "model").update(
         name="fm_ldm",
-        nn_name="uvit",
-        autoencoder_name="autoencoder_kl",
+        nn_name="uvit_t2i",
+        conditional=True,
         grad_checkpoint=True,
     )
+    c(config, "model", "condition").update(
+        condition_type="text",
+        cond_embedder_name="frozen_clip_embedder",
+        cfg=True,
+        p_cond=0.2,
+        empty_latent_path="/home/jikewct/Dataset/coco2017/coco_256_feature/empty_latent.npy",
+    )
+    c(config, "model", "ldm").update(
+        autoencoder_name="frozen_autoencoder_kl",
+    )
     c(config, "model", "fm_ldm").update()
-    c(config, "model", "uvit").update(
+
+    c(config, "model", "condition", "frozen_clip_embedder").update(
+        pretrained_path="/home/jikewct/public/jikewct/Model/clip-vit-large-patch14",
+    )
+
+    c(config, "model", "uvit_t2i").update(
         # cacl from autoencoder_kl ch_mult config
         img_size=config.data.img_size[0],
         patch_size=2,
         in_chans=config.data.img_channels,
         embed_dim=512,
-        depth=16,
+        depth=12,
         num_heads=8,
         mlp_ratio=4,
         qkv_bias=False,
         mlp_time_embed=False,
-        num_classes=-1,
+        clip_dim=768,
+        num_clip_token=77,
         use_checkpoint=config.model.grad_checkpoint,
     )
-    c(config, "model", "autoencoder_kl").update(
+    c(config, "model", "ldm", "frozen_autoencoder_kl").update(
         double_z=True,
         z_channels=4,
         resolution=256,
@@ -74,14 +90,26 @@ def get_config():
         dropout=0.0,
         embed_dim=4,
         pretrained_path="/home/jikewct/public/jikewct/Model/stable_diffusion/stable-diffusion/autoencoder_kl.pth",
-        scale_factor=0.18215,
+        scale_factor=0.23010,
     )
-
+    c(config, "test").update(
+        batch_size=5,
+        num_samples=5,
+        save_path="./data/test/",
+    )
     c(config, "sampling").update(
         log_freq=1,
         method="rk45",
         sampling_steps=50,
         denoise=True,
+        sampling_conditions=[
+            "A green train is coming down the tracks.",
+            "A group of skiers are preparing to ski down a mountain.",
+            "A small kitchen with a low ceiling.",
+            "A group of elephants walking in muddy water.",
+            "A living area with a television and a table.",
+        ],
+        guidance_scale=1.0,
     )
     c(config, "sampling", "rk45").update(
         rtol=1e-3,

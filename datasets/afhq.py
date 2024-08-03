@@ -18,25 +18,25 @@ class Afhq(BaseDataset):
     def init_dataset(self, **kargs):
         img_class = kargs["afhq"].img_class
         if img_class == "all":
-            self.train_dataset = AFHQ(
+            self.train_dataset = AFHQDataset(
                 root=self.root_path + "/train/",
                 transform=self.resize_trans(self.img_size),
                 img_class=img_class,
             )
-            self.val_dataset = AFHQ(
+            self.val_dataset = AFHQDataset(
                 root=self.root_path + "/val/",
                 transform=self.resize_trans(self.img_size),
                 img_class=img_class,
             )
         else:
-            self.train_dataset = AFHQ(
+            self.train_dataset = AFHQDataset(
                 root=self.root_path + "/train/",
                 transform=self.resize_trans(self.img_size),
                 img_class=img_class,
                 # transform=script_utils.get_transform(),
             )
 
-            self.val_dataset = AFHQ(
+            self.val_dataset = AFHQDataset(
                 root=self.root_path + "/val/",
                 transform=self.resize_trans(self.img_size),
                 img_class=img_class,
@@ -44,7 +44,7 @@ class Afhq(BaseDataset):
             )
 
 
-class AFHQ(datasets.ImageFolder):
+class AFHQDataset(datasets.ImageFolder):
     def __init__(self, root, transform, img_class="all"):
         self.img_class = img_class
         super().__init__(root, transform=transform)

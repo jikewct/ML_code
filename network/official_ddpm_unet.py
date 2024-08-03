@@ -150,7 +150,7 @@ class AttnBlock(nn.Module):
 
 
 @net_factory.register_network(name="official_ddpm_unet")
-class Model(nn.Module):
+class OfficialDDPMUNet(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.ch = config.model.base_channels

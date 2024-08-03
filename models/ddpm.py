@@ -8,12 +8,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
 
-from network import official_ddpm_unet, unet
-from network.layers import layer_utils
+from network import *
 
 from . import model_factory, model_utils
 from .base_model import BaseModel
-from .ema import EMA
 
 
 @model_factory.register_model(name="ddpm")
@@ -126,17 +124,17 @@ class DDPM(BaseModel):
     def SNR(self, t):
         return (self.alphas_cumprod[t] / (1 - self.alphas_cumprod[t])).item()
 
-    def predict(self, x, t, y=None, use_ema=False):
-        preds, extra_info = super().predict(x, t, y, use_ema)
-        if self.mode == model_utils.ModeEnum.SAMPLING:
-            self.debug_sampling(x, t, preds, extra_info)
-        return preds, extra_info
+    # def predict(self, x, t, y=None, use_ema=False):
+    #     preds, extra_info = super().predict(x, t, y, use_ema)
+    #     if self.mode == model_utils.ModeEnum.SAMPLING:
+    #         self.debug_sampling(x, t, preds, extra_info)
+    #     return preds, extra_info
 
     @torch.no_grad()
-    def denoising_step(self, x, scalar_t, y, use_ema=True):
+    def denoising_step(self, x, scalar_t, y, use_ema, uncond_y, guidance_scale):
         t_batch = torch.tensor([scalar_t], device=x.device).repeat(x.shape[0])
         # predict eps
-        model_output, extra_info = self.predict(x, t_batch, y, use_ema)
+        model_output, extra_info = self.sampling_predict(x, t_batch, y, use_ema, uncond_y, guidance_scale)
 
         # predict clipped x_0
         pred_x_0 = (
@@ -157,7 +155,7 @@ class DDPM(BaseModel):
         return super().cal_expected_norm(1.0)
 
     @torch.no_grad()
-    def sample(self, batch_size, y=None, use_ema=True):
+    def sample(self, batch_size, y=None, use_ema=True, uncond_y=None, guidance_scale=0.0):
         if y is not None and batch_size != len(y):
             raise ValueError("sample batch size different from length of given y")
 
@@ -165,7 +163,7 @@ class DDPM(BaseModel):
         x = self.prior_sampling(batch_size, self.device)
 
         for t in tqdm.tqdm(range(len(self.betas) - 1, -1, -1), desc="sampling", total=len(self.betas), leave=False):
-            x = self.denoising_step(x, t, y, use_ema)
+            x = self.denoising_step(x, t, y, use_ema, uncond_y, guidance_scale)
 
         return x.detach()
 

@@ -23,34 +23,37 @@ from configs.default_afhq_configs import get_default_configs
 def get_config():
     config = get_default_configs()
     c(config, "training").update(
-        batch_size=64,
+        batch_size=32,
         epochs=10000,
         snapshot_freq=500,
         log_freq=50,
         eval_freq=500,
         test_metric_freq=50000,
         resume=True,
-        resume_path="/home/jikewct/public/jikewct/Repos/ml_code/data/checkpoints/generative_model/flowMatching/uvit/afhq/96X96",
-        resume_step=-1,
+        # resume_path="/home/jikewct/public/jikewct/Repos/ml_code/data/checkpoints/generative_model/fm_ldm/uvit/afhq_32x32_feature/32X32",
         # model_checkpoint="./data/checkpoints/generative_model/flowMatching/uvit/afhq/96X96/30-network.pth",
     )
     c(config, "data").update(
-        img_size=(96, 96),
+        dataset="afhq_32x32_feature",
+        img_size=(32, 32),
+        img_channels=4,
+        root_path="/home/jikewct/public/jikewct/Dataset/afhq/afhq256_features",
     )
-    c(config, "data", "afhq").update(
-        img_class="cat",
-    )
+    c(config, "data", "afhq_32x32_feature").update()
     c(config, "model").update(
-        name="flowMatching",
+        name="fm_ldm",
         nn_name="uvit",
         grad_checkpoint=True,
     )
-    c(config, "model", "flowMatching").update()
+    c(config, "model", "fm_ldm").update(
+        autoencoder_name="frozen_autoencoder_kl",
+    )
     c(config, "model", "uvit").update(
+        # cacl from autoencoder_kl ch_mult config
         img_size=config.data.img_size[0],
-        patch_size=8,
-        embed_dim=512,
+        patch_size=2,
         in_chans=config.data.img_channels,
+        embed_dim=512,
         depth=16,
         num_heads=8,
         mlp_ratio=4,
@@ -59,11 +62,20 @@ def get_config():
         num_classes=-1,
         use_checkpoint=config.model.grad_checkpoint,
     )
-
-    c(config, "test").update(
-        save_path="./data/test/",
-        batch_size=5,
-        num_samples=5,
+    c(config, "model", "fm_ldm", "frozen_autoencoder_kl").update(
+        double_z=True,
+        z_channels=4,
+        resolution=256,
+        in_channels=3,
+        out_ch=3,
+        ch=128,
+        ch_mult=[1, 2, 4, 4],
+        num_res_blocks=2,
+        attn_resolutions=[],
+        dropout=0.0,
+        embed_dim=4,
+        pretrained_path="/home/jikewct/public/jikewct/Model/stable_diffusion/stable-diffusion/autoencoder_kl.pth",
+        scale_factor=0.18215,
     )
 
     c(config, "sampling").update(
@@ -78,16 +90,17 @@ def get_config():
     )
     c(config, "sampling", "ode").update()
 
-    c(config, "optim").update(
-        optimizer="adamw",
-        lr=0.0002,
-        weight_decay=0.03,
-        betas=(0.99, 0.999),
-    )
     c(config, "lr_scheduler").update(
         name="customized",
+    )
+    c(config, "lr_scheduler", "customized").update(
         warmup_steps=2000,
     )
-    config.pipeline = "FlowMatchingPipeLine"
+    c(config, "test").update(
+        save_path="./data/test/",
+        batch_size=5,
+        num_samples=5,
+    )
+    config.pipeline = "LDMPipeLine"
 
     return config

@@ -12,12 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .afhq import *
-from .afhq_feature import *
-from .celeba import *
-from .cifar10 import *
-from .dataset_factory import *
-from .lsun_church import *
-from .mnist import *
-from .mscoco import *
-from .mscoco_feature import *
+from . import dataset_factory
+from .afhq import Afhq
+from .afhq_feature import Afhq_32X32_Feature
+from .celeba import CelebA
+from .cifar10 import Cifar10
+from .dataset_utils import DataTypeEnum
+from .lsun_church import Lsun
+from .mnist import Mnist
+from .mscoco import MSCOCO
+from .mscoco_feature import MsCOCO_32X32_Feature

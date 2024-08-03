@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-from . import net_factory
+from network import net_factory
 
 
 class LinearAttention(nn.Module):
@@ -365,7 +365,7 @@ class Decoder(nn.Module):
         return h
 
 
-@net_factory.register_network(name="autoencoder_kl")
+@net_factory.register_network(name="frozen_autoencoder_kl")
 class FrozenAutoencoderKL(nn.Module):
     def __init__(self, embed_dim, pretrained_path, scale_factor=0.18215, **ddconfig):
         super().__init__()

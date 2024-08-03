@@ -24,6 +24,7 @@ class DDPM(BaseModel):
         return self.network.parameters()
 
     def init_coefficient(self, config):
+        super().init_coefficient(config)
         to_torch = partial(torch.tensor, dtype=torch.float32, device=config.device)
         betas = self.generate_betas_schedule(config)
         alphas = 1.0 - betas

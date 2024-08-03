@@ -134,13 +134,15 @@ def default_configs():
     n(defualt_config, "model", "ldm").update(
         autoencoder_name="frozen_autoencoder_kl",
     )
+    n(defualt_config, "model", "vpsde").update(
+        schedule_type="sd",  ## sd, linear
+        num_scales=1000,
+        std_min=0.00085,
+        std_max=0.0120,
+    )
     n(defualt_config, "model", "fm_ldm").update()
     n(defualt_config, "model", "vpsde_ldm").update(
         # autoencoder_name="frozen_autoencoder_kl",
-        schedule="sd",
-        num_scales=1000,
-        beta_min=0.00085,
-        beta_max=0.0120,
     )
     n(defualt_config, "model", "ldm", "frozen_autoencoder_kl").update(
         double_z=True,

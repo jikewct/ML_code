@@ -29,10 +29,10 @@ def get_config():
         log_freq=50,
         eval_freq=50,
         test_metric_freq=1000000,
-        resume=False,
+        resume=True,
         continuous=False,
         # resume_path="/home/jikewct/public/jikewct/Repos/ml_code/data/checkpoints/generative_model/fm_ldm/uvit/afhq_32x32_feature/32X32",
-        model_checkpoint="/home/jikewct/public/jikewct/Model/uvit/mscoco_uvit_small.pth",
+        # model_checkpoint="/home/jikewct/public/jikewct/Model/uvit/mscoco_uvit_small.pth",
     )
     c(config, "data").update(
         dataset="mscoco_32x32_feature",
@@ -57,12 +57,14 @@ def get_config():
     c(config, "model", "ldm").update(
         autoencoder_name="frozen_autoencoder_kl",
     )
-    c(config, "model", "vpsde_ldm").update(
-        schedule="sd",
+
+    c(config, "model", "vpsde").update(
+        schedule_type="sd",  ## sd, linear
         num_scales=1000,
-        beta_min=0.00085,
-        beta_max=0.0120,
+        std_min=0.00085,
+        std_max=0.0120,
     )
+    c(config, "model", "vpsde_ldm").update()
     c(config, "model", "condition", "frozen_clip_embedder").update(
         pretrained_path="/home/jikewct/public/jikewct/Model/clip-vit-large-patch14",
     )
@@ -104,7 +106,7 @@ def get_config():
     )
     c(config, "sampling").update(
         log_freq=1,
-        method="dpm_solver",  # ode, rk45, pc, dpm_solver
+        method="rk45",  # ode, rk45, pc, dpm_solver
         denoise=True,
         sampling_conditions=[
             "A green train is coming down the tracks.",
@@ -126,8 +128,8 @@ def get_config():
         sampling_steps=50,
     )
     c(config, "sampling", "pc").update(
-        predictor="reversediffusion",  # euler,reversediffusion,ancestralsampling,""
-        corrector="langevin",  # ald,langevin, ""
+        predictor="euler",  # euler,reversediffusion,ancestralsampling,""
+        corrector="",  # ald,langevin, ""
         n_step_each=1,
         snr=0.16,
     )

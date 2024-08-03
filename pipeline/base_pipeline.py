@@ -63,6 +63,7 @@ class BasePipeLine(ABC):
 
     def init_model(self):
         self.model = model_factory.create_model(self.config)
+        self.model.init_sampler(self.config)
 
     def init_optimizer(self):
         config = self.config
@@ -356,6 +357,7 @@ class BasePipeLine(ABC):
 
     def generate_samples(self, batch_size, sample_num, save_path, desc=""):
         self.test_time_meter.start()
+        logging.info(f"sampler info:{self.model.sampler.states()}")
         logging.info(f"==================begin {desc} generate samples =======================")
         self.before_eval()
         batch_size_list = np.concatenate([np.asarray([batch_size] * (sample_num // batch_size), dtype=np.int64), [sample_num % batch_size]])

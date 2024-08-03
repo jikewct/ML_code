@@ -19,6 +19,7 @@ from optimizer.dpm_solver_pp import DPM_Solver, NoiseScheduleVP, interpolate_fn
 from . import model_factory, model_utils
 from .base_model import BaseModel
 from .ema import EMA
+from .noise_schedule import *
 
 """
     0   --------> T
@@ -35,36 +36,17 @@ class SDE(BaseModel):
     def init_parameters(self, config):
         super().init_parameters(config)
         self.model_config = config.model[config.model.name]
-        self.num_scales = self.model_config.num_scales
+        # self.num_scales = self.model_config.num_scales
         self.denoise = config.sampling.denoise
         self.continuous = config.training.continuous
         self.predict_type = config.model.predict_type
-
-    def init_coefficient(self, config):
-        self.timesteps = torch.linspace(self.T, self.EPS, self.N, device=config.device)
-
-    @property
-    def T(self):
-        return 1.0
-
-    @property
-    def EPS(self):
-        return 1e-5
-
-    @property
-    def N(self):
-        return self.num_scales
 
     @abstractmethod
     def sde(self, x, t):
         pass
 
     @abstractmethod
-    def marginal_prob(self, x, t):
-        pass
-
-    @abstractmethod
-    def marginal_std(self, t):
+    def init_schedule(self, config) -> BaseNoiseSchedule:
         pass
 
     @abstractmethod
@@ -75,9 +57,20 @@ class SDE(BaseModel):
     def prior_logp(self, z):
         pass
 
-    @abstractmethod
+    def marginal_std(self, t):
+        return self.ns.marginal_coef(t)[1]
+
+    def marginal_prob(self, x, t):
+
+        mean_coeff, std = self.ns.marginal_coef(t)
+        mean = batch_scalar_prod(mean_coeff, x)
+        return mean, std
+
     def get_alpha(self, t):
-        pass
+        return self.ns.get_alpha(t)
+
+    def get_beta(self, t):
+        return self.ns.get_beta(t)
 
     def discretize(self, x, t):
         dt = self.T / self.N
@@ -94,18 +87,6 @@ class SDE(BaseModel):
             def __init__(self):
                 self.fsde = fsde
                 self.ode = probability_flow
-
-            @property
-            def T(self):
-                return self.fsde.T
-
-            @property
-            def N(self):
-                return self.fsde.N
-
-            @property
-            def EPS(self):
-                return self.fsde.EPS
 
             def sde(self, x, t, y, use_ema, uncond_y, guidance_scale):
                 sigma = self.fsde.marginal_prob(x, t)[1][0]
@@ -178,155 +159,11 @@ class SDE(BaseModel):
     def convert_t_cnt2dct(self, t):
         return (t * (self.N - 1) / self.T).round().long()
 
-    def convert_t_dct2cnt(self, t):
-        return self.timesteps[self.N - 1 - t]
-
-    def corrector_sample(self, x, t, y, use_ema, uncond_y, guidance_scale, corrector, n_step_each, snr):
-        if corrector.lower() == "ald":
-            x, x_mean = self.ald_correct(x, t, y, use_ema, uncond_y, guidance_scale, n_step_each, snr)
-        elif corrector.lower() == "langevin":
-            x, x_mean = self.langevin_correct(x, t, y, use_ema, uncond_y, guidance_scale, n_step_each, snr)
-        else:
-            return x, x
-        return x, x_mean
-
-    def langevin_correct(self, x, t, y, use_ema, uncond_y, guidance_scale, n_step_each, snr):
-        for i in range(n_step_each):
-            grad, _ = self.score_sampling_predict(x, t, y, use_ema, uncond_y, guidance_scale)
-            noise = torch.randn_like(x)
-            grad_norm = torch.norm(grad.reshape(grad.shape[0], -1), dim=1).mean()
-            noise_norm = torch.norm(noise.reshape(noise.shape[0], -1), dim=1).mean()
-            step_size = (snr * noise_norm / grad_norm) ** 2 * 2 * self.get_alpha(t)
-            x_mean = x + batch_scalar_prod(step_size, grad)
-            x = x_mean + batch_scalar_prod(torch.sqrt(2 * step_size), noise)
-        return x, x_mean
-
-    def ald_correct(self, x, t, y, use_ema, uncond_y, guidance_scale, n_step_each, snr):
-        for i in range(n_step_each):
-            grad, _ = self.score_sampling_predict(x, t, y, use_ema, uncond_y, guidance_scale)
-            noise = torch.randn_like(x)
-            std = self.marginal_prob(x, t)[1]
-            step_size = (snr * std) ** 2 * 2 * self.get_alpha(t)
-            x_mean = x + batch_scalar_prod(step_size, grad)
-            x = x_mean + batch_scalar_prod(torch.sqrt(2 * step_size), noise)
-        return x, x_mean
-
-    def predictor_sample(self, rsde, x, t, y, use_ema, uncond_y, guidance_scale, predictor):
-        if predictor.lower() == "euler":
-            x, x_mean = self.eulerMaruyama_predict(rsde, x, t, y, use_ema, uncond_y, guidance_scale)
-        elif predictor.lower() == "reversediffusion":
-            x, x_mean = self.reverse_diffusion_predict(rsde, x, t, y, use_ema, uncond_y, guidance_scale)
-        elif predictor.lower() == "ancestralsampling":
-            x, x_mean = self.ancestral_sampling_predict(rsde, x, t, y, use_ema, uncond_y, guidance_scale)
-        else:
-            return x, x
-        return x, x_mean
-
-    def reverse_diffusion_predict(self, rsde, x, t, y, use_ema, uncond_y, guidance_scale):
-        f, G = rsde.discretize(x, t, y, use_ema, uncond_y, guidance_scale)
-        z = torch.randn_like(x)
-        x_mean = x - f
-        x = x_mean + batch_scalar_prod(G, z)
-        return x, x_mean
-
-    @abstractmethod
-    def ancestral_sampling_predict(self, rsde, x, t, y, use_ema, uncond_y, guidance_scale):
-        pass
-
-    def eulerMaruyama_predict(self, rsde, x, t, y, use_ema, uncond_y, guidance_scale):
-        dt = -self.T / rsde.N * self.N
-        z = torch.randn_like(x)
-        drift, diffusion = rsde.sde(x, t, y, use_ema, uncond_y, guidance_scale)
-        x_mean = x + drift * dt
-        x = x_mean + batch_scalar_prod(diffusion, np.sqrt(-dt) * z)
-        return x, x_mean
-
-    def pc_sample(self, batch_size, device, y, use_ema, uncond_y, guidance_scale, predictor="", corrector="", n_step_each=1, snr=0.16):
-        shape = (batch_size, self.img_channels, *self.img_size)
-        x = self.prior_sampling(batch_size, device)
-        rsde = self.reverse()
-
-        for i in tqdm.tqdm(range(self.N), desc="pc sample", total=self.N, leave=False):
-            t = self.timesteps[i]
-            vec_t = torch.ones(batch_size, device=device) * t
-            x, x_mean = self.corrector_sample(x, vec_t, y, use_ema, uncond_y, guidance_scale, corrector, n_step_each, snr)
-            x, x_mean = self.predictor_sample(rsde, x, vec_t, y, use_ema, uncond_y, guidance_scale, predictor)
-        # x_max = x.max()
-        # x_min = x.min()
-        # x = (x - x_min) / (x_max - x_min + 1e-7) * 2 - 1
-        return x_mean if self.denoise else x
-
-    def ode_sample(self, batch_size, device, y, use_ema, uncond_y, guidance_scale, sampling_steps=10):
-        #  shape = (batch_size, self.img_channels, *self.img_size)
-        x = self.prior_sampling(batch_size, device)
-        rsde = self.reverse(probability_flow=True)
-        dt = -self.T / sampling_steps * self.N
-        steps = np.linspace(0, self.N - 1, sampling_steps).round().astype(np.int32)
-        for i in tqdm.tqdm(steps, desc="ode sample", total=sampling_steps, leave=False):
-            t = self.timesteps[i]
-            vec_t = torch.ones(batch_size, device=device) * t
-            drift, diffusion = rsde.sde(x, vec_t, y, use_ema, uncond_y, guidance_scale)
-            x = x + drift * dt
-            # x = x_mean + diffusion[:, None, None, None] * np.sqrt(-dt) * z
-        return x
-
-    def rk45_sample(self, batch_size, device, y, use_ema, uncond_y, guidance_scale, **kargs):
-        x = self.prior_sampling(batch_size, device)
-        shape = x.shape
-        rsde = self.reverse(probability_flow=True)
-        solution = integrate.solve_ivp(
-            self.ode_func,
-            (self.N, 0),
-            self.to_flattened_numpy(x),
-            method="RK45",
-            args=(y, rsde, shape, device, use_ema, uncond_y, guidance_scale),
-            **kargs,
-        )
-        nfe = solution.nfev
-        logging.info(f"sample nfe:{nfe}")
-        x = torch.tensor(solution.y[:, -1]).reshape(shape).to(device).type(torch.float32)
-        return x.detach()
-
-    def ode_func(self, t, x, y, rsde, shape, device, use_ema, uncond_y, guidance_scale):
-        x = self.from_flattened_numpy(x, shape).to(device).type(torch.float32)
-        t = torch.ones(shape[0], device=device) * t / self.N
-        drift, _ = rsde.sde(x, t, y, use_ema, uncond_y, guidance_scale)
-        return self.to_flattened_numpy(drift)
-
-    def dpm_solver_sample(self, batch_size, device, y, use_ema, uncond_y, guidance_scale, sampling_steps=50):
-        shape = (batch_size, self.img_channels, *self.img_size)
-        x = self.prior_sampling(batch_size, device)
-        # x = torch.from_numpy(np.load("/home/jikewct/Dataset/coco2017/coco_256_feature/noise_1x4x32x32.npy")).to(device).float()
-        # x = einops.repeat(x, "1 C H W -> B C H W", B=batch_size)
-        noise_schedule = self.get_noise_schedule()
-        # logging.info(batch_size, y.shape, use_ema, uncond_y.shape, guidance_scale, sampling_steps)
-
-        def model_fn(x, t_continuous):
-            # t = t_continuous * self.N
-            # logging.info(t[0])
-            preds, _ = self.sampling_predict(x, t_continuous, y, use_ema, uncond_y, guidance_scale)
-            return preds
-
-        dmp_solver = DPM_Solver(model_fn, noise_schedule, predict_x0=True, thresholding=False)
-        samples = dmp_solver.sample(x, steps=sampling_steps, eps=self.EPS, T=self.T)
-        return samples
-
-    def get_noise_schedule(self):
-        pass
-
     @torch.no_grad()
     def sample(self, batch_size, y=None, use_ema=True, uncond_y=None, guidance_scale=0.0):
-        if self.sampling_method.lower() == "ode":
-            x = self.ode_sample(batch_size, self.device, y, use_ema, uncond_y, guidance_scale, **self.sampling_config)
-        elif self.sampling_method.lower() == "pc":
-            x = self.pc_sample(batch_size, self.device, y, use_ema, uncond_y, guidance_scale, **self.sampling_config)
-        elif self.sampling_method.lower() == "dpm_solver":
-            x = self.dpm_solver_sample(batch_size, self.device, y, use_ema, uncond_y, guidance_scale, **self.sampling_config)
-        elif self.sampling_method.lower() == "rk45":
-            x = self.rk45_sample(batch_size, self.device, y, use_ema, uncond_y, guidance_scale, **self.sampling_config)
 
-        else:
-            raise NotImplementedError(f"{self.sampling_method} not yet supported.")
+        z = self.prior_sampling(batch_size, self.device)
+        x = self.sampler.sample(z, y, use_ema, uncond_y, guidance_scale)
         return x
 
 
@@ -379,23 +216,6 @@ class VESDE(SDE):
         G = torch.sqrt(sigma**2 - sigma_prev**2)
         return f, G
 
-    def ancestral_sampling_predict(self, rsde, x, t, y, use_ema, uncond_y, guidance_scale):
-        t_step = self.convert_t_cnt2dct(t)
-        sigma = self.discrete_sigmas[t_step]
-        sigma_prev = self.discrete_sigmas_prev[t_step]
-        score, _ = self.score_sampling_predict(x, t, y, use_ema, uncond_y, guidance_scale)
-        x_mean = x + batch_scalar_prod(sigma**2 - sigma_prev**2, score)
-        std = torch.sqrt((sigma_prev**2 * (sigma**2 - sigma_prev**2)) / (sigma**2))
-        noise = torch.randn_like(x)
-        x = x_mean + batch_scalar_prod(std, noise)
-        return x, x_mean
-
-    # def after_predict(self, x, t, y, user_ema, preds, extra_info):
-    #     std = self.marginal_std(t)
-    #     if self.predict_type == "noise":
-    #         preds = preds / std[:, None, None, None]
-    #     return super().after_predict(x, t, y, user_ema, preds, extra_info)
-
 
 @model_factory.register_model(name="vpsde")
 class VPSDE(SDE):
@@ -405,88 +225,17 @@ class VPSDE(SDE):
 
     def init_parameters(self, config):
         super().init_parameters(config)
-        # self.N = config.model.num_scales
-        self.beta_min = self.model_config.beta_min
-        self.beta_max = self.model_config.beta_max
-        if not self.continuous:
-            self.init_discrete_parameter(config)
 
-    def init_discrete_parameter(self, config):
-        self.betas = self.generate_betas_schedule().to(config.device)
-        # self.alphas = 1.0 - self.betas
-        # self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
-        # self.alphas_cumprod_prev = torch.cat([torch.tensor([1.0], device=config.device), self.alphas_cumprod[:-1]])
-        # # print(self.alphas_cumprod.shape, self.alphas_cumprod.dtype, self.alphas_cumprod)
-        # self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
-        # self.sqrt_1m_alphas_cumprod = torch.sqrt(1 - self.alphas_cumprod)
-        self.log_alphas_discrete = 0.5 * torch.log(1 - self.betas).cumsum(dim=0).reshape((1, -1))
-        self.t_discrete = torch.linspace(self.EPS, 1.0, self.N).reshape((1, -1))
-
-    def generate_betas_schedule(self):
-
-        if self.model_config.schedule == "cosine":
-            betas = self.generate_cosine_schedule(self.num_scales)
-        if self.model_config.schedule == "sd":
-            betas = self.gengerate_sd_schedule(self.num_scales, self.beta_min, self.beta_max)
+    def init_schedule(self, config):
+        class_name = VPSDE.__name__.lower()
+        model_config = config.model[class_name]
+        if model_config.schedule_type == "sd":
+            noise_schedule = VPSDNoiseSchedule(self.continuous, self.device, **model_config)
+        elif model_config.schedule_type == "linear":
+            noise_schedule = VPLinearNoiseSchedule(self.continuous, self.device, **model_config)
         else:
-            betas = self.generate_linear_schedule(self.num_scales, self.beta_min, self.beta_max)
-        return betas
-
-    def get_noise_schedule(self):
-        noise_schedule = NoiseScheduleVP(schedule="discrete", betas=self.betas)
+            raise NotImplementedError(f"{model_config.schedule_type} schedule not implemented")
         return noise_schedule
-
-    def gengerate_sd_schedule(self, num_scales, low, high):
-        return torch.linspace(low**0.5, high**0.5, num_scales) ** 2
-
-    def generate_cosine_schedule(self, T, s=0.008):
-
-        def f(t, T):
-            return (np.cos((t / T + s) / (1 + s) * np.pi / 2)) ** 2
-
-        alphas = []
-        f0 = f(0, T)
-
-        for t in range(T + 1):
-            alphas.append(f(t, T) / f0)
-        betas = []
-
-        for t in range(1, T + 1):
-            betas.append(min(1 - alphas[t] / alphas[t - 1], 0.999))
-
-        return np.array(betas)
-
-    def generate_linear_schedule(self, T, low, high):
-        return np.linspace(low, high, T)
-
-    def get_alpha(self, t):
-        return 1.0 - self.get_beta(t)
-
-    def get_beta(self, t):
-        if self.model_config.schedule == "linear":
-            beta_t = (self.beta_max - self.beta_min) * t + self.beta_min
-        elif self.model_config.schedule == "sd":
-            beta_t = ((self.beta_max**0.5 - self.beta_min**0.5) * t + self.beta_min**0.5) ** 2
-        else:
-            raise NotImplementedError
-        return beta_t
-
-    def get_alpha_cum(self, t):
-        if self.continuous:
-            if self.model_config.schedule == "linear":
-                mean_coeff = torch.exp(-0.5 * (2 * t**2 * (self.beta_max - self.beta_min) + t * self.beta_min))
-            elif self.model_config.schedule == "sd":
-                a = self.beta_max**0.5 - self.beta_min**0.5
-                b = self.beta_min**0.5
-                mean_coeff = torch.exp(-0.5 * (1.0 / 3 * t**3 * a**2 + a * b * t ** +(b**2) * t))
-            else:
-                raise NotImplementedError
-        else:
-            log_mean_coeff = interpolate_fn(
-                t.reshape((-1, 1)), self.t_discrete.clone().to(t.device), self.log_alphas_discrete.clone().to(t.device)
-            ).reshape((-1,))
-            mean_coeff = torch.exp(log_mean_coeff)
-        return mean_coeff**2
 
     def cal_expected_norm(self, sigma):
         return super().cal_expected_norm(1.0)
@@ -496,22 +245,6 @@ class VPSDE(SDE):
         drift = -0.5 * batch_scalar_prod(beta_t, x)
         diffusion = torch.sqrt(beta_t)
         return drift, diffusion
-
-    def marginal_std(self, t):
-        return self.marginal_coef(t)[1]
-
-    def marginal_coef(self, t):
-
-        alpha_cum_t = self.get_alpha_cum(t)
-        mean_coeff = torch.sqrt(alpha_cum_t)
-        std = torch.sqrt(1.0 - mean_coeff**2)
-        return mean_coeff, std
-
-    def marginal_prob(self, x, t):
-
-        mean_coeff, std = self.marginal_coef(t)
-        mean = batch_scalar_prod(mean_coeff, x)
-        return mean, std
 
     def prior_sampling(self, batch_size, device):
         z = torch.randn(batch_size, self.img_channels, *self.img_size, device=device)
@@ -523,22 +256,7 @@ class VPSDE(SDE):
         return -N / 2.0 * np.log(2 * np.pi) - torch.sum(z**2, dim=(1, 2, 3)) / 2.0
 
     def discretize(self, x, t):
-        # t_step = self.convert_t_cnt2dct(t)
-        # beta = self.betas[t_step]
-        # alpha = self.alphas[t_step]
-        # sqrt_beta = torch.sqrt(beta)
         alpha_t, beta_t = self.get_alpha(t), self.get_beta(t)
         f = batch_scalar_prod(torch.sqrt(alpha_t), x) - x
         G = torch.sqrt(beta_t)
         return f, G
-
-    def ancestral_sampling_predict(self, rsde, x, t, y, use_ema, uncond_y, guidance_scale):
-        alpha_t, beta_t = self.get_alpha(t), self.get_beta(t)
-        score, _ = self.score_sampling_predict(x, t, y, use_ema, uncond_y, guidance_scale)
-        x_mean = batch_scalar_prod(1 / torch.sqrt(alpha_t), x + batch_scalar_prod(beta_t, score))
-        prev_t = t - 1.0 / self.N
-        prev_t = torch.where(prev_t > 0, prev_t, self.EPS)
-        std = torch.sqrt(beta_t * (1.0 - self.get_alpha_cum(prev_t)) / (1.0 - self.get_alpha_cum(t)))
-        noise = torch.randn_like(x)
-        x = x_mean + batch_scalar_prod(std, noise)
-        return x, x_mean

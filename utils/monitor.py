@@ -143,3 +143,13 @@ def cuda_memory(device):
     }
     torch.cuda.reset_peak_memory_stats(device)
     return memory_info
+
+
+def fileter_object_states(object):
+    state = {}
+    for key, val in object.__dict__.items():
+        if isinstance(val, (int, float, str, bool, bytes, bytearray, complex, tuple)):
+            state[key] = val
+        if isinstance(val, dict):
+            state.update(val)
+    return state

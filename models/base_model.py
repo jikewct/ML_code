@@ -18,12 +18,14 @@ from utils import monitor
 
 from . import model_utils
 from .ema import EMA
+from .noise_schedule import *
 
 
 class BaseModel(ABC):
 
     def __init__(self, config):
         self.init_parameters(config)
+
         self.init_coefficient(config)
         self.init_network(config)
         self.init_debug_info(config)
@@ -83,13 +85,22 @@ class BaseModel(ABC):
         self.ema_update_rate = ema_config.ema_update_rate
         self.ema_network = deepcopy(self.network)
 
+    def init_sampler(self, config):
+        from models.sample import sample_factory
+
+        self.sampler = sample_factory.create_sampler(self, config)
+        logging.info(f"sampler info:{self.sampler.states()}")
+
     def accelerator_prepare(self, accelerator: Accelerator):
         self.network = accelerator.prepare(self.network)
         if self.enable_ema:
             self.ema_network = accelerator.prepare(self.ema_network)
 
-    @abstractmethod
     def init_coefficient(self, config):
+        self.ns = self.init_schedule(config)
+
+    @abstractmethod
+    def init_schedule(self, config) -> BaseNoiseSchedule:
         pass
 
     def parameters(self):
@@ -241,7 +252,15 @@ class BaseModel(ABC):
 
     @property
     def T(self):
-        pass
+        return self.ns.T
+
+    @property
+    def EPS(self):
+        return self.ns.EPS
+
+    @property
+    def N(self):
+        return self.ns.N
 
     def get_groups(self, t):
         interval = self.T / self.debug_groups
@@ -314,11 +333,3 @@ class BaseModel(ABC):
 
     def cal_expected_norm(self, sigma):
         return np.sqrt(self.img_size[0] * self.img_size[1] * self.img_channels) / sigma
-
-    def to_flattened_numpy(self, x):
-        """Flatten a torch tensor `x` and convert it to numpy."""
-        return x.detach().cpu().numpy().reshape((-1,))
-
-    def from_flattened_numpy(self, x, shape):
-        """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""
-        return torch.from_numpy(x.reshape(shape))

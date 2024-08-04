@@ -5,22 +5,23 @@ import torch
 from lib.tensor_trans import *
 from optimizer.dpm_solver_pp import interpolate_fn
 
-from .base_noise_schedule import BaseNoiseSchedule
+from . import noise_schedule_factory
+from .guassian_noise_schedule import GuassianNoiseSchedule
 
 
-class VPNoiseSchedule(BaseNoiseSchedule):
+class VPNoiseSchedule(GuassianNoiseSchedule):
     def __init__(self, continuous, device, std_min, std_max, num_scales, schedule_type) -> None:
         super().__init__(continuous, device, std_min, std_max, num_scales, schedule_type)
         self.init_discrete_parameter()
 
     def init_discrete_parameter(self):
-        if not self.continous:
+        if not self.continuous:
             self.betas = self.generate_discrete_betas()
             self.log_alpha_cums = 0.5 * torch.log(1 - self.betas).cumsum(dim=0).reshape((1, -1))
             self.discrete_t = torch.linspace(self.EPS, self.T, self.N, device=self.device).reshape((1, -1))
 
     @abstractmethod
-    def generate_discrete_betas():
+    def generate_discrete_betas(self):
         pass
 
     @abstractmethod
@@ -31,7 +32,7 @@ class VPNoiseSchedule(BaseNoiseSchedule):
         return 1.0 - self.get_beta(t)
 
     def get_alpha_cum(self, t):
-        if self.continous:
+        if self.continuous:
             return self.get_continous_alpha_cum(t)
         log_alpha_cum = interpolate_fn(t.reshape((-1, 1)), self.discrete_t.clone(), self.log_alpha_cums.clone()).reshape((-1,))
         return torch.exp(log_alpha_cum) ** 2
@@ -51,6 +52,7 @@ class VPNoiseSchedule(BaseNoiseSchedule):
         return mean, std
 
 
+@noise_schedule_factory.register_noise_scheduler(name="linear_vpns")
 class VPLinearNoiseSchedule(VPNoiseSchedule):
     def __init__(self, **kargs) -> None:
         print(kargs)
@@ -66,6 +68,7 @@ class VPLinearNoiseSchedule(VPNoiseSchedule):
         return torch.exp(-0.5 * (2 * t**2 * (self.beta_max - self.beta_min) + t * self.beta_min))
 
 
+@noise_schedule_factory.register_noise_scheduler(name="sd_vpns")
 class VPSDNoiseSchedule(VPNoiseSchedule):
     def __init__(self, *args, **kargs) -> None:
         super().__init__(*args, **kargs)

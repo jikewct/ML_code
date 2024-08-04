@@ -13,8 +13,8 @@ from .base_sample import SDESample
 
 @sample_factory.register_sampler(name="dpm_solver")
 class DPMSolverSample(SDESample):
-    def __init__(self, model, sampling_steps=10) -> None:
-        super().__init__(model)
+    def __init__(self, model, sampling_method, sampling_steps=10) -> None:
+        super().__init__(model, sampling_method)
         self.sampling_steps = sampling_steps
 
     def _sample(self, x, y, use_ema, uncond_y, guidance_scale, denoise=False):

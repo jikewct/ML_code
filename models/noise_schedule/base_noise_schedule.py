@@ -8,12 +8,8 @@ from utils.monitor import fileter_object_states
 
 
 class BaseNoiseSchedule:
-    def __init__(self, continuous, device, std_min, std_max, num_scales, schedule_type) -> None:
-        self.std_min = std_min
-        self.std_max = std_max
-        self.continous = continuous
-        self.schedule_type = schedule_type
-        self.num_scales = num_scales
+    def __init__(self, continuous, device) -> None:
+        self.continuous = continuous
         self.device = device
 
     @property
@@ -26,21 +22,21 @@ class BaseNoiseSchedule:
 
     @property
     def N(self):
-        return self.num_scales
+        return 999
 
     @abstractmethod
     def marginal_coef(self, t):
         pass
 
-    def get_alpha(self, t):
-        return torch.ones_like(t)
+    # def get_alpha(self, t):
+    #     return torch.ones_like(t)
 
-    def get_alpha_cum(self, t):
-        return torch.ones_like(t)
+    # def get_alpha_cum(self, t):
+    #     return torch.ones_like(t)
 
-    @abstractmethod
-    def get_beta(self, t):
-        pass
+    # @abstractmethod
+    # def get_beta(self, t):
+    #     pass
 
     def states(self):
         state = {"ns_scheduler": self.__class__.__name__}

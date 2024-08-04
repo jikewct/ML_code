@@ -29,6 +29,7 @@ def get_config():
         log_freq=50,
         eval_freq=500,
         test_metric_freq=1000000,
+        continuous=True,
         resume=True,
         # resume_path="/home/jikewct/public/jikewct/Repos/ml_code/data/checkpoints/generative_model/fm_ldm/uvit/afhq_32x32_feature/32X32",
         # model_checkpoint="./data/checkpoints/generative_model/flowMatching/uvit/afhq/96X96/30-network.pth",
@@ -56,8 +57,11 @@ def get_config():
     c(config, "model", "ldm").update(
         autoencoder_name="frozen_autoencoder_kl",
     )
-    c(config, "model", "fm_ldm").update()
+    c(config, "model", "fm_ldm").update(
+        scheduler="rfns",
+    )
 
+    c(config, "model", "rfns").update()
     c(config, "model", "condition", "frozen_clip_embedder").update(
         pretrained_path="/home/jikewct/public/jikewct/Model/clip-vit-large-patch14",
     )
@@ -100,7 +104,6 @@ def get_config():
     c(config, "sampling").update(
         log_freq=1,
         method="rk45",
-        sampling_steps=50,
         denoise=True,
         sampling_conditions=[
             "A green train is coming down the tracks.",
@@ -115,8 +118,9 @@ def get_config():
         rtol=1e-3,
         atol=1e-3,
     )
-    c(config, "sampling", "ode").update()
-
+    c(config, "sampling", "ode").update(
+        sampling_steps=50,
+    )
     c(config, "lr_scheduler").update(
         name="customized",
     )

@@ -126,7 +126,7 @@ def default_configs():
         pretrained_path="/home/jikewct/public/jikewct/Model/clip-vit-large-patch14",
     )
     n(defualt_config, "model", "flowMatching").update(
-        num_scales=1000,
+        scheduler="rfns",  ## vpns,vens, rfns
     )
 
     n(defualt_config, "model", "ddpm").update()
@@ -135,14 +135,27 @@ def default_configs():
         autoencoder_name="frozen_autoencoder_kl",
     )
     n(defualt_config, "model", "vpsde").update(
+        scheduler="vpns",  ## vpns,vens, rfns
+    )
+    n(defualt_config, "model", "rfns").update()
+    n(defualt_config, "model", "vpns").update(
         schedule_type="sd",  ## sd, linear
         num_scales=1000,
         std_min=0.00085,
         std_max=0.0120,
     )
-    n(defualt_config, "model", "fm_ldm").update()
+    n(defualt_config, "model", "vens").update(
+        schedule_type="sd",  ## sd, linear
+        num_scales=1000,
+        std_min=0.00085,
+        std_max=0.0120,
+    )
+    n(defualt_config, "model", "fm_ldm").update(
+        scheduler="rfns",  ## vpns,vens, rfns
+    )
     n(defualt_config, "model", "vpsde_ldm").update(
         # autoencoder_name="frozen_autoencoder_kl",
+        scheduler="vpns",  ## vpns,vens, rfns
     )
     n(defualt_config, "model", "ldm", "frozen_autoencoder_kl").update(
         double_z=True,

@@ -59,6 +59,9 @@ def get_config():
     )
 
     c(config, "model", "vpsde").update(
+        scheduler="vpns",  ## vpns,vens, rfns
+    )
+    c(config, "model", "vpns").update(
         schedule_type="sd",  ## sd, linear
         num_scales=1000,
         std_min=0.00085,
@@ -106,7 +109,7 @@ def get_config():
     )
     c(config, "sampling").update(
         log_freq=1,
-        method="rk45",  # ode, rk45, pc, dpm_solver
+        method="pc",  # ode, rk45, pc, dpm_solver
         denoise=True,
         sampling_conditions=[
             "A green train is coming down the tracks.",
@@ -128,8 +131,8 @@ def get_config():
         sampling_steps=50,
     )
     c(config, "sampling", "pc").update(
-        predictor="euler",  # euler,reversediffusion,ancestralsampling,""
-        corrector="",  # ald,langevin, ""
+        predictor="reversediffusion",  # euler,reversediffusion,ancestralsampling,""
+        corrector="ald",  # ald,langevin, ""
         n_step_each=1,
         snr=0.16,
     )

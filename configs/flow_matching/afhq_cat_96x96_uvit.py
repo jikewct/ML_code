@@ -28,9 +28,10 @@ def get_config():
         snapshot_freq=500,
         log_freq=50,
         eval_freq=500,
+        continuous=True,
         test_metric_freq=50000,
         resume=True,
-        resume_path="/home/jikewct/public/jikewct/Repos/ml_code/data/checkpoints/generative_model/flowMatching/uvit/afhq/96X96",
+        # resume_path="/home/jikewct/public/jikewct/Repos/ml_code/data/checkpoints/generative_model/flowMatching/uvit/afhq/96X96",
         resume_step=-1,
         # model_checkpoint="./data/checkpoints/generative_model/flowMatching/uvit/afhq/96X96/30-network.pth",
     )
@@ -69,14 +70,15 @@ def get_config():
     c(config, "sampling").update(
         log_freq=1,
         method="rk45",
-        sampling_steps=50,
         denoise=True,
     )
     c(config, "sampling", "rk45").update(
         rtol=1e-3,
         atol=1e-3,
     )
-    c(config, "sampling", "ode").update()
+    c(config, "sampling", "ode").update(
+        sampling_steps=50,
+    )
 
     c(config, "optim").update(
         optimizer="adamw",

@@ -67,7 +67,7 @@ class BasePipeLine(ABC):
 
     def init_optimizer(self):
         config = self.config
-        parameters = self.model.parameters()
+        parameters = self.model.get_parameters()
         self.optimizer = optimize.get_optimizer(parameters, **config.optim)
         self.lr_scheduler = optimize.get_lr_scheduler(self.optimizer, **config.lr_scheduler)
 
@@ -159,7 +159,7 @@ class BasePipeLine(ABC):
         state["pipeline"] = (self.current_train_epoch, self.current_train_step, self.uuid)
         state["optimizer"] = self.optimizer.state_dict()
         state["lr_scheduler"] = self.lr_scheduler.state_dict()
-        state.update(self.model.state_dict())
+        state.update(self.model.get_state_dict())
         return state
 
     def train_loop(self):
@@ -431,7 +431,7 @@ class BasePipeLine(ABC):
         # self.init_metrics()
         sample_num = self.config.test.num_samples
         batch_size = self.config.test.batch_size
-        save_path = f"{self.config.test.save_path}/{self.config.model.name}/{self.config.data.dataset}"
+        save_path = f"{self.config.test.save_path}/{self.config.model.name}/{self.config.data.dataset}/{self.model.sampling_method}"
         self.generate_samples(batch_size, sample_num, save_path, "test")
 
     def save_result(self, results, iter, save_path):

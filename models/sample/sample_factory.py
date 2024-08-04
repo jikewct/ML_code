@@ -28,9 +28,9 @@ def get_sampler(name):
 
 def create_sampler(model, config) -> BaseSample:
     """Create  model."""
-    sampling_name = config.sampling.method
-    sampling_config = config.sampling[sampling_name]
-    sampler = get_sampler(sampling_name)(model, **sampling_config)
+    sampling_method = config.sampling.method
+    sampling_config = config.sampling[sampling_method]
+    sampler = get_sampler(sampling_method)(model, sampling_method, **sampling_config)
     # score_model = score_model.to(config.device)
     # score_model = torch.nn.DataParallel(score_model)
     return sampler

@@ -20,7 +20,7 @@ class DDPM(BaseModel):
     def __init__(self, config):
         super().__init__(config)
 
-    def parameters(self):
+    def get_parameters(self):
         return self.network.parameters()
 
     def init_coefficient(self, config):

@@ -13,8 +13,8 @@ from .base_sample import SDESample
 
 @sample_factory.register_sampler(name="pc")
 class PCSample(SDESample):
-    def __init__(self, model, predictor="", corrector="", n_step_each=1, snr=0.16) -> None:
-        super().__init__(model)
+    def __init__(self, model, sampling_method, predictor="", corrector="", n_step_each=1, snr=0.16) -> None:
+        super().__init__(model, sampling_method)
         self.predictor = predictor
         self.corrector = corrector
         self.n_step_each = n_step_each

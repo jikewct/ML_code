@@ -12,9 +12,10 @@ from utils.monitor import fileter_object_states
 
 
 class BaseSample:
-    def __init__(self, model: BaseModel):
+    def __init__(self, model: BaseModel, sampling_method):
         self.model = model
         self.ns = model.ns
+        self.sampling_method = sampling_method
 
     def sample(self, y, use_ema, uncond_y, guidance_scale, denoise=False):
         # logging.info(self.states())
@@ -25,13 +26,13 @@ class BaseSample:
         pass
 
     def states(self):
-        state = {"sampler": self.__class__.__name__}
+        state = {}
         state.update(fileter_object_states(self))
         state.update(self.ns.states())
         return state
 
 
 class SDESample(BaseSample):
-    def __init__(self, model: SDE):
-        super().__init__(model)
+    def __init__(self, model: SDE, sampling_method):
+        super().__init__(model, sampling_method)
         self.model = model

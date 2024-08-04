@@ -30,6 +30,7 @@ def get_config():
         eval_freq=500,
         test_metric_freq=50000,
         resume=True,
+        continuous=True,
         # resume_path="/home/jikewct/public/jikewct/Repos/ml_code/data/checkpoints/generative_model/fm_ldm/uvit/afhq_32x32_feature/32X32",
         # model_checkpoint="./data/checkpoints/generative_model/flowMatching/uvit/afhq/96X96/30-network.pth",
     )
@@ -45,9 +46,13 @@ def get_config():
         nn_name="uvit",
         grad_checkpoint=True,
     )
-    c(config, "model", "fm_ldm").update(
+    c(config, "model", "ldm").update(
         autoencoder_name="frozen_autoencoder_kl",
     )
+    c(config, "model", "fm_ldm").update(
+        scheduler="rfns",
+    )
+    c(config, "model", "rfns").update()
     c(config, "model", "uvit").update(
         # cacl from autoencoder_kl ch_mult config
         img_size=config.data.img_size[0],
@@ -62,7 +67,7 @@ def get_config():
         num_classes=-1,
         use_checkpoint=config.model.grad_checkpoint,
     )
-    c(config, "model", "fm_ldm", "frozen_autoencoder_kl").update(
+    c(config, "model", "ldm", "frozen_autoencoder_kl").update(
         double_z=True,
         z_channels=4,
         resolution=256,
@@ -80,16 +85,19 @@ def get_config():
 
     c(config, "sampling").update(
         log_freq=1,
-        method="rk45",
-        sampling_steps=50,
+        method="ode",
         denoise=True,
     )
     c(config, "sampling", "rk45").update(
         rtol=1e-3,
         atol=1e-3,
     )
-    c(config, "sampling", "ode").update()
-
+    c(config, "sampling", "ode").update(
+        sampling_steps=50,
+    )
+    c(config, "sampling", "dpm_solver").update(
+        sampling_steps=50,
+    )
     c(config, "lr_scheduler").update(
         name="customized",
     )

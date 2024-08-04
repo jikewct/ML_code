@@ -13,5 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from . import noise_schedule_factory
 from .base_noise_schedule import BaseNoiseSchedule
+from .guassian_noise_schedule import GuassianNoiseSchedule
+from .rectified_noise_schedule import RectifiedNoiseSchedule
 from .vp_noise_schedule import *

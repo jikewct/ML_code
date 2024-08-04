@@ -38,15 +38,11 @@ class SDE(BaseModel):
         self.model_config = config.model[config.model.name]
         # self.num_scales = self.model_config.num_scales
         self.denoise = config.sampling.denoise
-        self.continuous = config.training.continuous
         self.predict_type = config.model.predict_type
+        self.support_sampling_method = ("ode", "rk45", "pc", "dpm_solver")
 
     @abstractmethod
     def sde(self, x, t):
-        pass
-
-    @abstractmethod
-    def init_schedule(self, config) -> BaseNoiseSchedule:
         pass
 
     @abstractmethod
@@ -73,7 +69,7 @@ class SDE(BaseModel):
         return self.ns.get_beta(t)
 
     def discretize(self, x, t):
-        dt = self.T / self.N
+        dt = self.ns.T / self.ns.N
         drift, diffusion = self.sde(x, t)
         f = drift * dt
         G = diffusion * torch.sqrt(torch.tensor(dt, device=t.divice))
@@ -112,9 +108,14 @@ class SDE(BaseModel):
 
         return RSDE()
 
+    def rode(self, x, t, y, use_ema, uncond_y, guidance_scale):
+        rsde = self.reverse(probability_flow=True)
+        drift, _ = rsde.sde(x, t, y, use_ema, uncond_y, guidance_scale)
+        return drift
+
     def generate_t(self, batch_size, device):
 
-        t = torch.rand((batch_size,), device=device) * (self.T - self.EPS) + self.EPS
+        t = torch.rand((batch_size,), device=device) * (self.ns.T - self.ns.EPS) + self.ns.EPS
         # if self.continuous: return t
         # t = self.timesteps[self.convert_t_cnt2dct(t)]
         return t
@@ -149,7 +150,7 @@ class SDE(BaseModel):
 
     def before_predict(self, x, t, y, use_ema):
         if self.continuous:
-            cvt_t = t * self.N
+            cvt_t = t * self.ns.N
         else:
             cvt_t = self.convert_t_cnt2dct(t)
         # logging.info(f"t_shape:{cvt_t.shape}, t_max:{cvt_t.max()}, t_min:{cvt_t.min()}")
@@ -157,14 +158,14 @@ class SDE(BaseModel):
 
     #### (0, 1.0)  ---> [0, N-1]
     def convert_t_cnt2dct(self, t):
-        return (t * (self.N - 1) / self.T).round().long()
+        return (t * (self.ns.N - 1) / self.ns.T).round().long()
 
-    @torch.no_grad()
-    def sample(self, batch_size, y=None, use_ema=True, uncond_y=None, guidance_scale=0.0):
+    # @torch.no_grad()
+    # def sample(self, batch_size, y=None, use_ema=True, uncond_y=None, guidance_scale=0.0):
 
-        z = self.prior_sampling(batch_size, self.device)
-        x = self.sampler.sample(z, y, use_ema, uncond_y, guidance_scale)
-        return x
+    #     z = self.prior_sampling(batch_size, self.device)
+    #     x = self.sampler.sample(z, y, use_ema, uncond_y, guidance_scale)
+    #     return x
 
 
 @model_factory.register_model(name="vesde")
@@ -179,7 +180,7 @@ class VESDE(SDE):
         # self.N = config.model.num_scales
         self.sigma_min = config.model.sigma_min
         self.sigma_max = config.model.sigma_max
-        sigma_list = torch.linspace(np.log(self.sigma_min), np.log(self.sigma_max), self.N)
+        sigma_list = torch.linspace(np.log(self.sigma_min), np.log(self.sigma_max), self.ns.N)
         self.discrete_sigmas = torch.exp(sigma_list).to(config.device)
         self.discrete_sigmas_prev = torch.concat((torch.tensor(0, device=config.device).view(-1), self.discrete_sigmas[1:])).to(config.device)
 
@@ -226,16 +227,16 @@ class VPSDE(SDE):
     def init_parameters(self, config):
         super().init_parameters(config)
 
-    def init_schedule(self, config):
-        class_name = VPSDE.__name__.lower()
-        model_config = config.model[class_name]
-        if model_config.schedule_type == "sd":
-            noise_schedule = VPSDNoiseSchedule(self.continuous, self.device, **model_config)
-        elif model_config.schedule_type == "linear":
-            noise_schedule = VPLinearNoiseSchedule(self.continuous, self.device, **model_config)
-        else:
-            raise NotImplementedError(f"{model_config.schedule_type} schedule not implemented")
-        return noise_schedule
+    # def init_schedule(self, config):
+    #     class_name = VPSDE.__name__.lower()
+    #     model_config = config.model[class_name]
+    #     if model_config.schedule_type == "sd":
+    #         noise_schedule = VPSDNoiseSchedule(self.continuous, self.device, **model_config)
+    #     elif model_config.schedule_type == "linear":
+    #         noise_schedule = VPLinearNoiseSchedule(self.continuous, self.device, **model_config)
+    #     else:
+    #         raise NotImplementedError(f"{model_config.schedule_type} schedule not implemented")
+    #     return noise_schedule
 
     def cal_expected_norm(self, sigma):
         return super().cal_expected_norm(1.0)

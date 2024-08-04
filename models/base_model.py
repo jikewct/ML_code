@@ -25,7 +25,6 @@ class BaseModel(ABC):
 
     def __init__(self, config):
         self.init_parameters(config)
-
         self.init_coefficient(config)
         self.init_network(config)
         self.init_debug_info(config)
@@ -37,10 +36,12 @@ class BaseModel(ABC):
         self.img_channels = config.data.img_channels
         self.num_classes = config.data.num_classes
         self.loss_type = config.model.loss_type
+        self.continuous = config.training.continuous
         self.log_to_wandb = config.training.log_to_wandb
         self.mode = model_utils.ModeEnum.TRAIN
         self.sampling_method = config.sampling.method
         self.sampling_config = config.sampling[self.sampling_method]
+        self.support_sampling_method = ()
 
     def init_debug_info(self, config):
         self.sampling_enable_debug = config.sampling.enable_debug
@@ -85,32 +86,25 @@ class BaseModel(ABC):
         self.ema_update_rate = ema_config.ema_update_rate
         self.ema_network = deepcopy(self.network)
 
-    def init_sampler(self, config):
-        from models.sample import sample_factory
-
-        self.sampler = sample_factory.create_sampler(self, config)
-        logging.info(f"sampler info:{self.sampler.states()}")
-
     def accelerator_prepare(self, accelerator: Accelerator):
         self.network = accelerator.prepare(self.network)
         if self.enable_ema:
             self.ema_network = accelerator.prepare(self.ema_network)
 
     def init_coefficient(self, config):
-        self.ns = self.init_schedule(config)
+        self.init_schedule(config)
 
-    @abstractmethod
-    def init_schedule(self, config) -> BaseNoiseSchedule:
-        pass
+    def init_schedule(self, config):
+        self.ns = noise_schedule_factory.create_noise_scheduler(config, self.continuous, self.device)
+        logging.info(self.ns.states())
 
-    def parameters(self):
-        return self.network.parameters()
+    def init_sampler(self, config):
+        from models.sample import sample_factory
 
-    # def save_checkpoint(self, filepath):
-    #     torch.save(self.network.state_dict(), filepath)
-    #     if self.enable_ema:
-    #         ema_filepath = filepath + "-ema"
-    #         torch.save(self.ema_network.state_dict(), ema_filepath)
+        self.sampler = sample_factory.create_sampler(self, config)
+        logging.info(f"sampler info:{self.sampler.states()}")
+
+    ################ load state ################################################
 
     def load_checkpoint(self, filepath):
         state_dict = torch.load(filepath)
@@ -133,12 +127,20 @@ class BaseModel(ABC):
         if self.enable_ema:
             self.ema_network.load_state_dict(state["ema_network"])
 
-    def state_dict(self):
+    ################ get set method ################################################
+
+    def get_state_dict(self):
         state = dict()
         state["network"] = self.network.state_dict()
         if self.enable_ema:
             state["ema_network"] = self.ema_network.state_dict()
         return state
+
+    def get_parameters(self):
+        return self.network.parameters()
+
+    def get_network(self):
+        return self.network
 
     def set_train_mode(self):
         self.mode = model_utils.ModeEnum.TRAIN
@@ -160,62 +162,7 @@ class BaseModel(ABC):
         self.set_eval_mode()
         self.mode = model_utils.ModeEnum.TEST
 
-    def get_network(self):
-        return self.network
-
-    def update_ema(self):
-        if not self.enable_ema:
-            return
-        self.step += 1
-        if self.step % self.ema_update_rate == 0:
-            if self.step < self.ema_start:
-                self.ema_network.load_state_dict(self.network.state_dict())
-            else:
-                self.ema.update_model_average(self.ema_network, self.network)
-
-    def extract(self, a, t, x_shape):
-        b, *_ = t.shape
-        out = a.gather(-1, t)
-        return out.reshape(b, *((1,) * (len(x_shape) - 1)))
-
-    def predict(self, x, t, y=None, use_ema=False):
-        _x, _t, _y, _use_ema = self.before_predict(x, t, y, use_ema)
-        # logging.info(f"t_shape:{_t.shape}, t_max:{_t.max()}, t_min:{_t.min()}")
-        if _use_ema and self.enable_ema:
-            output = self.ema_network(_x, _t, _y)
-        else:
-            output = self.network(_x, _t, _y)
-        if isinstance(output, tuple):
-            preds, extra_info = output[0], output[1]
-        else:
-            preds, extra_info = output, {}
-        preds, extra_info = self.after_predict(x, t, y, use_ema, preds, extra_info)
-        return preds, extra_info
-
-    def before_predict(self, x, t, y, use_ema):
-        return x, t, y, use_ema
-
-    def after_predict(self, x, t, y, user_ema, preds, extra_info):
-        if self.mode == model_utils.ModeEnum.SAMPLING:
-            self.debug_sampling(x, t, preds, extra_info)
-        return preds, extra_info
-
-    def sampling_predict(self, x, t, y, use_ema, uncond_y, guidance_scale):
-        if uncond_y is None or guidance_scale <= 1e-4:
-            preds, extra_info = self.predict(x, t, y, use_ema=use_ema)
-        else:
-            preds, extra_info = self.cfg_predict(x, t, y, use_ema, uncond_y, guidance_scale)
-        return preds, extra_info
-
-    def cfg_predict(self, x, t, y, use_ema, uncond_y, guidance_scale):
-        x_in = torch.cat([x] * 2)
-        t_in = torch.cat([t] * 2)
-        y_in = torch.cat([uncond_y, y])
-        speed_vf_tmp, extra_info = self.predict(x_in, t_in, y_in, use_ema=use_ema)
-        speed_vf_uncond, speed_vf_cond = speed_vf_tmp.chunk(2)
-        speed_vf = speed_vf_cond + guidance_scale * (speed_vf_cond - speed_vf_uncond)
-        return speed_vf, extra_info
-
+    ################ train ################################################
     @abstractmethod
     def forward(self, x, y=None):
         pass
@@ -234,36 +181,83 @@ class BaseModel(ABC):
         losses = 1 / 2 * ((preds - targets) ** 2).sum(dim=1)
         return losses
 
+    def predict(self, x, t, y=None, use_ema=False):
+        _x, _t, _y, _use_ema = self.before_predict(x, t, y, use_ema)
+        # logging.info(f"t_shape:{_t.shape}, t_max:{_t.max()}, t_min:{_t.min()}")
+        if _use_ema and self.enable_ema:
+            output = self.ema_network(_x, _t, _y)
+        else:
+            output = self.network(_x, _t, _y)
+        if isinstance(output, tuple):
+            preds, extra_info = output[0], output[1]
+        else:
+            preds, extra_info = output, {}
+        preds, extra_info = self.after_predict(x, t, y, use_ema, preds, extra_info)
+        return preds, extra_info
+
+    def before_predict(self, x, t, y, use_ema):
+        if self.continuous:
+            t = t * self.ns.N
+        return x, t, y, use_ema
+
+    def after_predict(self, x, t, y, user_ema, preds, extra_info):
+        if self.mode == model_utils.ModeEnum.SAMPLING:
+            self.debug_sampling(x, t, preds, extra_info)
+        return preds, extra_info
+
+    def update_ema(self):
+        if not self.enable_ema:
+            return
+        self.step += 1
+        if self.step % self.ema_update_rate == 0:
+            if self.step < self.ema_start:
+                self.ema_network.load_state_dict(self.network.state_dict())
+            else:
+                self.ema.update_model_average(self.ema_network, self.network)
+
+    ################ sample ################################################
+
+    def prior_sampling(self, batch_size, device):
+        _, prior_std = self.ns.marginal_coef(torch.tensor(self.ns.T, device=self.device))
+        return torch.randn(batch_size, self.img_channels, *self.img_size, device=device) * prior_std
+
+    def sampling_predict(self, x, t, y, use_ema, uncond_y, guidance_scale):
+        if uncond_y is None or guidance_scale <= 1e-4:
+            preds, extra_info = self.predict(x, t, y, use_ema=use_ema)
+        else:
+            preds, extra_info = self.cfg_predict(x, t, y, use_ema, uncond_y, guidance_scale)
+        return preds, extra_info
+
+    def cfg_predict(self, x, t, y, use_ema, uncond_y, guidance_scale):
+        x_in = torch.cat([x] * 2)
+        t_in = torch.cat([t] * 2)
+        y_in = torch.cat([uncond_y, y])
+        speed_vf_tmp, extra_info = self.predict(x_in, t_in, y_in, use_ema=use_ema)
+        speed_vf_uncond, speed_vf_cond = speed_vf_tmp.chunk(2)
+        speed_vf = speed_vf_cond + guidance_scale * (speed_vf_cond - speed_vf_uncond)
+        return speed_vf, extra_info
+
+    @torch.no_grad()
+    def sample(self, batch_size, y=None, use_ema=True, uncond_y=None, guidance_scale=0.0) -> torch.Tensor:
+        if self.sampler.sampling_method not in self.support_sampling_method:
+            raise NotImplementedError(f"{self.sampler.sampling_method} sampling method not implemeted")
+        z = self.prior_sampling(batch_size, self.device)
+        x = self.sampler.sample(z, y, use_ema, uncond_y, guidance_scale)
+        return x
+
+    ################ utils ################################################
+
     def encode_text_condition(self, text_condition):
         return self.cond_embedder.encode(text_condition)
 
-    @abstractmethod
-    @torch.no_grad()
-    def sample(self, batch_size, y=None, use_ema=True, uncond_y=None, guidance_scale=0.0) -> torch.Tensor:
-        pass
+    def extract(self, a, t, x_shape):
+        b, *_ = t.shape
+        out = a.gather(-1, t)
+        return out.reshape(b, *((1,) * (len(x_shape) - 1)))
 
-    @abstractmethod
-    def prior_sampling(self, batch_size, device):
-        pass
-
-    @abstractmethod
-    def marginal_std(self, t):
-        pass
-
-    @property
-    def T(self):
-        return self.ns.T
-
-    @property
-    def EPS(self):
-        return self.ns.EPS
-
-    @property
-    def N(self):
-        return self.ns.N
-
+    ################ debug ################################################
     def get_groups(self, t):
-        interval = self.T / self.debug_groups
+        interval = self.ns.T / self.debug_groups
         groups = torch.div(t, interval, rounding_mode="trunc")
         # groups = (t // interval).long()
         return groups
@@ -297,7 +291,7 @@ class BaseModel(ABC):
         ):
             return
         assert x.shape[0] > 0
-        x_0, preds_0, sigma = x[0], preds[0], self.marginal_std(t)[0]
+        x_0, preds_0, sigma = x[0], preds[0], self.ns.marginal_coef(t)[1][0]
         expected_norm = self.cal_expected_norm(sigma)
         x_mean, x_max, x_min = x_0.mean(), x_0.max(), x_0.min()
         preds_0_norm = torch.norm(preds_0)

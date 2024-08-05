@@ -29,7 +29,7 @@ class FlowMatching(BaseModel):
     def init_parameters(self, config):
         super().init_parameters(config)
         self.continuous = True
-        self.support_sampling_method = ("ode", "rk45")
+        self.support_sampling_method = ("ode", "numerical")
 
     # def init_schedule(self, config) -> RectifiedNoiseSchedule:
     #     return RectifiedNoiseSchedule(self.continuous, self.device)
@@ -58,4 +58,4 @@ class FlowMatching(BaseModel):
         # t = self.ns.T - t
         predict_vf, _ = self.sampling_predict(x, t, y, use_ema, uncond_y, guidance_scale)
         # return -predict_vf
-        return -predict_vf
+        return predict_vf

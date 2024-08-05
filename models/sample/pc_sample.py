@@ -30,9 +30,6 @@ class PCSample(SDESample):
             vec_t = torch.ones(x.shape[0], device=x.device) * t
             x, x_mean = self.corrector_sample(x, vec_t, y, use_ema, uncond_y, guidance_scale, self.corrector, self.n_step_each, self.snr)
             x, x_mean = self.predictor_sample(rsde, x, vec_t, y, use_ema, uncond_y, guidance_scale, self.predictor)
-        # x_max = x.max()
-        # x_min = x.min()
-        # x = (x - x_min) / (x_max - x_min + 1e-7) * 2 - 1
         return x_mean if denoise else x
 
     def eulerMaruyama_predict(self, rsde, x, t, y, use_ema, uncond_y, guidance_scale):

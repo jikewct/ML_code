@@ -53,6 +53,12 @@ class BasePipeLine(ABC):
         self.uuid = str(uuid.uuid1())
         self.init_internal_parameters()
 
+    @property
+    def Name(self):
+        conditinal = "cond" if self.conditional else "uncond"
+        name_fields = [self.config.data.dataset, self.config.model.name, self.config.model.nn_name, conditinal]
+        return "-".join(name_fields)
+
     def init_internal_parameters(self):
         conditinal = "cond" if self.conditional else "uncond"
         self.ckpt_path = f"{self.config.training.ckpt_dir}/{self.config.training.project_name}/{self.config.model.name}/{self.config.model.nn_name}/{self.config.data.dataset}/{self.config.data.img_size[0]}X{self.config.data.img_size[1]}/{conditinal}"
@@ -96,6 +102,27 @@ class BasePipeLine(ABC):
         self.train_loss.reset()
         self.eval_loss.reset()
 
+    def set_train_mode(self):
+        self.model.set_train_mode()
+
+    def set_eval_mode(self):
+        self.model.set_eval_mode()
+
+    def set_sampling_mode(self):
+        self.model.set_sampling_mode()
+
+    def set_test_mode(self):
+        self.model.set_test_mode()
+
+    def get_lr(self):
+        return self.optimizer.param_groups[0]["lr"]
+
+    def watch_model(self):
+        if self.config.training.log_to_wandb:
+            wandb.watch(self.model.get_network())
+
+    ################ load and save state ################################################
+
     def load_pipeline(self):
         if self.config.training.resume:
             self.resume_state()
@@ -109,13 +136,6 @@ class BasePipeLine(ABC):
             return
         self.model.load_checkpoint(model_checkpoint)
         logging.info(f"load model checkpoint success! {model_checkpoint}")
-
-    # def save_checkpoint(self):
-    #     filepath = f"{self.config.training.ckpt_dir}/{self.config.training.project_name}/{self.config.model.name}/{self.config.model.nn_name}-{self.config.data.dataset}-{self.current_step}-model"
-    #     os.makedirs(os.path.split(filepath)[0], exist_ok=True)
-    #     self.set_train_mode()  ## for lora model to split parameters
-    #     self.model.save_checkpoint(filepath)
-    #     logging.info(f"save model checkpoint success! {filepath}")
 
     def save_state(self):
         self.set_train_mode()  ## for lora model to split parameters
@@ -161,6 +181,8 @@ class BasePipeLine(ABC):
         state["lr_scheduler"] = self.lr_scheduler.state_dict()
         state.update(self.model.get_state_dict())
         return state
+
+    ################ train loop ################################################
 
     def train_loop(self):
         self.before_train()
@@ -209,12 +231,6 @@ class BasePipeLine(ABC):
         self.model.update_ema()
         return loss
 
-    def condition_transform(self, y):
-        if self.condition_param.cfg:
-            replaced_data = self.empty_latent if self.condition_param.condition_type == "text" else torch.zeros_like(y)
-            y = tensor_trans.replace_sample_by_cond(y, replaced_data, self.condition_param.p_cond)
-        return y
-
     def after_train_step(self):
         step = self.current_train_step
         if step % self.config.training.log_freq == 0:
@@ -240,6 +256,14 @@ class BasePipeLine(ABC):
 
     def after_train(self):
         pass
+
+    def condition_transform(self, y):
+        if self.condition_param.cfg:
+            replaced_data = self.empty_latent if self.condition_param.condition_type == "text" else torch.zeros_like(y)
+            y = tensor_trans.replace_sample_by_cond(y, replaced_data, self.condition_param.p_cond)
+        return y
+
+    ################ test loop ################################################
 
     def eval_loop(self):
         with torch.no_grad():
@@ -335,25 +359,7 @@ class BasePipeLine(ABC):
 
         self.reset_loss()
 
-    def test_metric_loop(self):
-        self.test_fid_score()
-
-    def test_fid_score(self):
-        sample_num = self.config.fast_fid.num_samples
-        batch_size = self.config.fast_fid.batch_size
-        ds_state_file = self.config.fast_fid.ds_state_file
-        save_path = "{}/fast_fid/{}/".format(self.config.fast_fid.save_path, int(time.time()))
-        self.generate_samples(batch_size, sample_num, save_path, "test fid")
-        paths = [ds_state_file, save_path]
-        fid_score = pytorch_fid.fid_score.calculate_fid_given_paths(paths, 50, self.device, 2048)
-        logging.info(f"fid score:{fid_score}, train steps: {self.current_train_step}, image path:{save_path}")
-        if self.config.training.log_to_wandb:
-            wandb.log(
-                {
-                    "fid_score": fid_score,
-                    "train_step": self.current_train_step / self.config.training.log_freq,
-                }
-            )
+    ################ sample  ################################################
 
     def generate_samples(self, batch_size, sample_num, save_path, desc=""):
         self.test_time_meter.start()
@@ -369,28 +375,7 @@ class BasePipeLine(ABC):
         logging.info("generate {} samples, time cost:{:.2f} seconds, save_path:{}".format(sample_num, self.test_time_meter.interval(), save_path))
         logging.info(f"==================end {desc} generate samples =======================")
 
-    def watch_model(self):
-        if self.config.training.log_to_wandb:
-            wandb.watch(self.model.get_network())
-
-    def set_train_mode(self):
-        self.model.set_train_mode()
-
-    def set_eval_mode(self):
-        self.model.set_eval_mode()
-
-    def set_sampling_mode(self):
-        self.model.set_sampling_mode()
-
-    def set_test_mode(self):
-        self.model.set_test_mode()
-
-    def get_lr(self):
-        return self.optimizer.param_groups[0]["lr"]
-
     def generate_sample_condition(self, num):
-        # logging.info(self.sampling_conditions)
-        # logging.info(self.condition_param)
         if self.sampling_conditions is None:
             y = torch.randint(0, self.config.data.num_classes, [num], device=self.device)
             if self.condition_param.cfg:
@@ -411,11 +396,7 @@ class BasePipeLine(ABC):
         self.set_sampling_mode()
         if self.conditional:
             y, uncond_y = self.generate_sample_condition(num)
-            # logging.info(f"y shape:{y.shape}")
             samples = self.model.sample(num, y=y, uncond_y=uncond_y, guidance_scale=self.guidance_scale)
-            # if self.condition_param.cfg and self.sample_scale >= 1e-4:
-            #     uncond_samples = self.model.sample(num, torch.zeros_like(y))
-            #     samples = samples + self.sample_scale * (samples - uncond_samples)
         else:
             samples = self.model.sample(num)
         ## model sample output : latent feature or img
@@ -426,6 +407,28 @@ class BasePipeLine(ABC):
 
     def unpreprocess_after_sample(self, samples):
         return samples
+
+    ################ test metric loop ################################################
+
+    def test_metric_loop(self):
+        self.test_fid_score()
+
+    def test_fid_score(self):
+        sample_num = self.config.fast_fid.num_samples
+        batch_size = self.config.fast_fid.batch_size
+        ds_state_file = self.config.fast_fid.ds_state_file
+        save_path = "{}/fast_fid/{}/".format(self.config.fast_fid.save_path, int(time.time()))
+        self.generate_samples(batch_size, sample_num, save_path, "test fid")
+        paths = [ds_state_file, save_path]
+        fid_score = pytorch_fid.fid_score.calculate_fid_given_paths(paths, 50, self.device, 2048)
+        logging.info(f"fid score:{fid_score}, train steps: {self.current_train_step}, image path:{save_path}")
+        if self.config.training.log_to_wandb:
+            wandb.log(
+                {
+                    "fid_score": fid_score,
+                    "train_step": self.current_train_step / self.config.training.log_freq,
+                }
+            )
 
     def test_loop(self):
         # self.init_metrics()

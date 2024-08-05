@@ -85,12 +85,17 @@ def get_config():
 
     c(config, "sampling").update(
         log_freq=1,
-        method="ode",
+        method="numerical",  # ode, numerical, pc, dpm_solver
         denoise=True,
     )
-    c(config, "sampling", "rk45").update(
+    c(config, "sampling", "numerical").update(
         rtol=1e-3,
         atol=1e-3,
+        equation_type="ode",
+        # ode in (eluer, rk45),
+        # sde in 'euler', 'euler_heun', 'heun', 'log_ode', 'midpoint', 'milstein', 'reversible_heun', 'srk']
+        method="rk45",
+        sampling_steps=20,
     )
     c(config, "sampling", "ode").update(
         sampling_steps=50,

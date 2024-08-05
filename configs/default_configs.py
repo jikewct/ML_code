@@ -29,7 +29,7 @@ def default_configs():
     )
     # sampling
     n(defualt_config, "sampling").update(
-        method="",  # ode, rk45, pc, dpm_solver
+        method="",  # ode, numerical, pc, dpm_solver
         enable_debug=False,
         log_freq=10,
         sampling_conditions=None,  # None or List()
@@ -38,9 +38,12 @@ def default_configs():
     n(defualt_config, "sampling", "ode").update(
         sampling_steps=50,
     )
-    n(defualt_config, "sampling", "rk45").update(
+    n(defualt_config, "sampling", "numerical").update(
         rtol=1e-3,
         atol=1e-3,
+        equation_type="sde",  ## ode, sde
+        method="rk45",  ## ode in (eluer, rk45), sde in (eluer, srk)
+        sampling_steps=50,
     )
     n(defualt_config, "sampling", "pc").update(
         predictor="",  # euler,reversediffusion,ancestralsampling,""

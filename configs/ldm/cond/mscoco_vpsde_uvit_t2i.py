@@ -109,7 +109,7 @@ def get_config():
     )
     c(config, "sampling").update(
         log_freq=1,
-        method="pc",  # ode, rk45, pc, dpm_solver
+        method="numerical",  # ode, numerical, pc, dpm_solver
         denoise=True,
         sampling_conditions=[
             "A green train is coming down the tracks.",
@@ -120,9 +120,14 @@ def get_config():
         ],
         guidance_scale=1.0,
     )
-    c(config, "sampling", "rk45").update(
+    c(config, "sampling", "numerical").update(
         rtol=1e-3,
         atol=1e-3,
+        equation_type="sde",
+        # ode in (eluer, rk45),
+        # sde in 'euler', 'euler_heun', 'heun', 'log_ode', 'midpoint', 'milstein', 'reversible_heun', 'srk']
+        method="srk",
+        sampling_steps=20,
     )
     c(config, "sampling", "ode").update(
         sampling_steps=50,

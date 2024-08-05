@@ -39,7 +39,7 @@ class SDE(BaseModel):
         # self.num_scales = self.model_config.num_scales
         self.denoise = config.sampling.denoise
         self.predict_type = config.model.predict_type
-        self.support_sampling_method = ("ode", "rk45", "pc", "dpm_solver")
+        self.support_sampling_method = ("ode", "numerical", "pc", "dpm_solver")
 
     @abstractmethod
     def sde(self, x, t):
@@ -112,6 +112,11 @@ class SDE(BaseModel):
         rsde = self.reverse(probability_flow=True)
         drift, _ = rsde.sde(x, t, y, use_ema, uncond_y, guidance_scale)
         return drift
+
+    def rsde(self, x, t, y, use_ema, uncond_y, guidance_scale):
+        rsde = self.reverse()
+        drift, diffusion = rsde.sde(x, t, y, use_ema, uncond_y, guidance_scale)
+        return drift, diffusion
 
     def generate_t(self, batch_size, device):
 

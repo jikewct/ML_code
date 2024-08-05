@@ -30,14 +30,8 @@ class TrainDiffusion:
                 config=vars(config),
                 resume="allow",
                 id=pipeline.uuid,
-                name=config.data.dataset
-                + "-"
-                + self.args.mode
-                + "-"
-                + config.model.name
-                + "-"
-                + config.model.nn_name
-                + datetime.datetime.now().strftime("-%Y-%m-%d-%H-%M"),
+                name=pipeline.Name + "-" + self.args.mode + datetime.datetime.now().strftime(":%Y-%m-%d-%H-%M"),
+                quiet=True,
             )
             # wandb.log({"net": pipeline.get_model()})
             logging.info(f"wandb url:{run.get_url()}")
@@ -58,11 +52,6 @@ class TrainDiffusion:
         elif self.args.mode == "debug_sampling":
             self.config.sampling.enable_debug = True
             self.config.training.log_to_wandb = True
-            # set random seed
-        # torch.manual_seed(self.config.seed)
-        # np.random.seed(self.config.seed)
-        # if torch.cuda.is_available():
-        #     torch.cuda.manual_seed_all(self.config.seed)
 
     def run(self):
         wandb_run = None
@@ -81,9 +70,10 @@ class TrainDiffusion:
             elif self.args.mode == "debug_sampling":
                 wandb_run = self.init_wandb(self.config, pipeline)
                 pipeline.debug_sampling()
-            if wandb_run is not None:
-                wandb_run.finish()
+        except KeyboardInterrupt:
+            logging.info("key board interrupt, run finished early")
         except Exception:
-            if wandb_run is not None:
-                wandb_run.finish()
             logging.info("exception, run finished early", exc_info=True)
+        finally:
+            if wandb_run is not None:
+                wandb_run.finish(quiet=True)

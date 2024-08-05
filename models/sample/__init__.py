@@ -14,6 +14,6 @@
 # limitations under the License.
 from . import sample_factory
 from .dpm_solver_sample import DPMSolverSample
+from .numerical_sample import NumericalSample
 from .ode_sample import ODESample
 from .pc_sample import PCSample
-from .rk45_sample import RK45Sample

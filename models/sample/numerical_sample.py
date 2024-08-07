@@ -34,6 +34,8 @@ class NumericalSample(SDESample):
         t_span = (self.ns.T, self.ns.EPS)
         if not self.model.continuous:
             t_span = (self.ns.N / self.ns.T, 0)
+        # logging.info(f"in _ode_sample  t_span:{t_span}")
+
         solution = integrate.solve_ivp(
             self._ode_func,
             t_span,
@@ -49,6 +51,8 @@ class NumericalSample(SDESample):
 
     def _ode_func(self, t, x, y, shape, device, use_ema, uncond_y, guidance_scale):
         x = from_flattened_numpy(x, shape).to(device).type(torch.float32)
+        # logging.info(f"in ode func t:{t}")
+
         t = torch.ones(shape[0], device=device) * t
         if not self.model.continuous:
             t /= self.ns.N
@@ -104,7 +108,7 @@ class NumericalSample(SDESample):
 
             def g(self, t, z):
                 if self.diffusion is None:
-                    logging.info(f"in g, t:{t}")
+                    # logging.info(f"in g, t:{t}")
                     t = torch.ones(shape[0], device=t.device) * t
                     _, self.diffusion = sampler.model.rsde(z, t, y, use_ema, uncond_y, guidance_scale)
                     self.nfe += 1

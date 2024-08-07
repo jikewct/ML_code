@@ -1,3 +1,4 @@
+import logging
 from abc import abstractmethod
 
 import numpy as np
@@ -26,6 +27,7 @@ class ODESample(SDESample):
             t = (self.ns.EPS - self.ns.T) * i / self.ns.N + self.ns.T
             vec_t = torch.ones(x.shape[0], device=x.device) * t
             drift = self.model.rode(x, vec_t, y, use_ema, uncond_y, guidance_scale)
+            # logging.info(f"dt:{dt}, drift:{drift.mean()}")
             x = x + drift * dt
             # x = x_mean + diffusion[:, None, None, None] * np.sqrt(-dt) * z
         return x

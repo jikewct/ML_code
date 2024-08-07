@@ -14,14 +14,12 @@ class RectifiedNoiseSchedule(BaseNoiseSchedule):
     def __init__(self, continuous, device) -> None:
         super().__init__(continuous, device)
 
-    # def get_alpha(self, t):
-    #     return self.T - t
+    @property
+    def EPS(self):
+        return 0.0
 
     def marginal_coef(self, t):
-
         return torch.ones_like(t), torch.ones_like(t)
 
-    # def marginal_prob(self, x, t):
-    #     mean_coeff, std = self.marginal_coef(t)
-    #     mean = batch_scalar_prod(mean_coeff, x)
-    #     return mean, std
+    def recursive_cond_coef(self, t):
+        return torch.ones_like(t), torch.ones_like(t)

@@ -17,4 +17,5 @@ from . import noise_schedule_factory
 from .base_noise_schedule import BaseNoiseSchedule
 from .guassian_noise_schedule import GuassianNoiseSchedule
 from .rectified_noise_schedule import RectifiedNoiseSchedule
+from .ve_noise_schedule import *
 from .vp_noise_schedule import *

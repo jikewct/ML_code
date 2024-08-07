@@ -22,21 +22,18 @@ class BaseNoiseSchedule:
 
     @property
     def N(self):
-        return 999
+        return 1000
 
     @abstractmethod
     def marginal_coef(self, t):
         pass
 
-    # def get_alpha(self, t):
-    #     return torch.ones_like(t)
+    @abstractmethod
+    def recursive_cond_coef(self, t):
+        pass
 
-    # def get_alpha_cum(self, t):
-    #     return torch.ones_like(t)
-
-    # @abstractmethod
-    # def get_beta(self, t):
-    #     pass
+    def generate_rand_t(self, batch_size):
+        return torch.rand((batch_size,), device=self.device) * (self.T - self.EPS) + self.EPS
 
     def states(self):
         state = {"ns_scheduler": self.__class__.__name__}

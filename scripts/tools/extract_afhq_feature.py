@@ -17,7 +17,7 @@ sys.path.append(".")
 sys.path.append("..")
 os.chdir("/home/jikewct/public/jikewct/Repos/ml_code")
 from configs.config_utils import c
-from configs.ldm.uncond.afhq_cat_ae_uvit import get_config
+from configs.ldm.uncond.afhq_cat_fm_uvit import get_config
 from datasets import dataset_factory, dataset_utils
 from models import FlowMatching, model_factory, model_utils
 from network import net_factory

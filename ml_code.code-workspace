@@ -25,6 +25,9 @@
 		},
 		{
 			"path": "../stable-diffusion"
+		},
+		{
+			"path": "../score_sde_pytorch"
 		}
 	],
 	"settings": {

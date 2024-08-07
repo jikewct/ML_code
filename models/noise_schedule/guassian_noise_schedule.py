@@ -20,22 +20,3 @@ class GuassianNoiseSchedule(BaseNoiseSchedule):
     @property
     def N(self):
         return self.num_scales
-
-    @abstractmethod
-    def marginal_coef(self, t):
-        pass
-
-    def get_alpha(self, t):
-        return torch.ones_like(t)
-
-    def get_alpha_cum(self, t):
-        return torch.ones_like(t)
-
-    @abstractmethod
-    def get_beta(self, t):
-        pass
-
-    # def states(self):
-    #     state = {"ns_scheduler": self.__class__.__name__}
-    #     state.update(fileter_object_states(self))
-    #     return state

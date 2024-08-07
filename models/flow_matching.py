@@ -39,7 +39,8 @@ class FlowMatching(BaseModel):
     def forward(self, x, y=None):
 
         b, c, h, w = x.shape
-        t = torch.rand((b,), device=x.device)
+        t = self.ns.generate_rand_t(b)
+
         # logging.info(x.shape, t.shape)
         x_t, x_0 = self.generate_trajectory_point(x, t)
         speed_vf = x_0 - x

@@ -4,6 +4,8 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils
+import torch.utils.checkpoint
 
 from . import net_factory
 from .layers import layer_utils, layers
@@ -26,6 +28,7 @@ class UNet(nn.Module):
         num_groups = config.model.num_groups
         attention_resolutions = config.model.attention_resolutions
         self.number_classes = num_classes
+        self.grad_checkpoint = config.model.grad_checkpoint
         self.activation = layers.LayerEnum.Activations[config.model.activation]
         self.time_mlp = (
             nn.Sequential(
@@ -58,6 +61,7 @@ class UNet(nn.Module):
                     norm=norm,
                     num_groups=num_groups,
                     use_attention=i in attention_resolutions,
+                    grad_checkpoint=self.grad_checkpoint,
                 )
                 self.downs.append(ResBlock)
                 now_channels = out_channels
@@ -78,6 +82,7 @@ class UNet(nn.Module):
                     norm=norm,
                     num_groups=num_groups,
                     use_attention=True,
+                    grad_checkpoint=self.grad_checkpoint,
                 ),
                 ResidualBlock(
                     now_channels,
@@ -89,6 +94,7 @@ class UNet(nn.Module):
                     norm=norm,
                     num_groups=num_groups,
                     use_attention=False,
+                    grad_checkpoint=self.grad_checkpoint,
                 ),
             ]
         )
@@ -109,6 +115,7 @@ class UNet(nn.Module):
                         norm=norm,
                         num_groups=num_groups,
                         use_attention=i in attention_resolutions,
+                        grad_checkpoint=self.grad_checkpoint,
                     )
                 )
                 now_channels = out_channels
@@ -453,10 +460,12 @@ class ResidualBlock(nn.Module):
         norm="gn",
         num_groups=32,
         use_attention=False,
+        grad_checkpoint=False,
     ):
         super().__init__()
 
         self.activation = activation
+        self.grad_checkpoint = (grad_checkpoint,)
 
         self.norm_1 = layers.LayerEnum.get_norm(norm, in_channels, num_groups)
         self.conv_1 = nn.Conv2d(in_channels, out_channels, 3, padding=1)
@@ -474,6 +483,12 @@ class ResidualBlock(nn.Module):
         self.attention = nn.Identity() if not use_attention else AttentionBlock(out_channels, norm, num_groups)
 
     def forward(self, x, time_emb=None, y=None):
+        if self.grad_checkpoint:
+            return torch.utils.checkpoint.checkpoint(self._forward, x, time_emb, y, use_reentrant=False)
+        else:
+            return self._forward(x, time_emb, y)
+
+    def _forward(self, x, time_emb=None, y=None):
         out = self.activation(self.norm_1(x))
         out = self.conv_1(out)
 

@@ -118,16 +118,20 @@ def default_configs():
         conditional=False,
         enable_lora=False,
     )
+    # model condition
     n(defualt_config, "model", "condition").update(
         cfg=True,
         p_cond=0.1,
         condition_type="class",  ###class or text
         cond_embedder_name="frozen_clip_embedder",
         empty_latent_path="",
+        empty_label=-1,
     )
     n(defualt_config, "model", "condition", "frozen_clip_embedder").update(
         pretrained_path="/home/jikewct/public/jikewct/Model/clip-vit-large-patch14",
     )
+
+    # model alg
     n(defualt_config, "model", "flowMatching").update(
         scheduler="rfns",  ## vpns,vens, rfns
     )
@@ -140,19 +144,11 @@ def default_configs():
     n(defualt_config, "model", "vpsde").update(
         scheduler="vpns",  ## vpns,vens, rfns
     )
+    n(defualt_config, "model", "vesde").update(
+        scheduler="vens",  ## vpns,vens, rfns
+    )
     n(defualt_config, "model", "rfns").update()
-    n(defualt_config, "model", "vpns").update(
-        schedule_type="sd",  ## sd, linear
-        num_scales=1000,
-        std_min=0.00085,
-        std_max=0.0120,
-    )
-    n(defualt_config, "model", "vens").update(
-        schedule_type="sd",  ## sd, linear
-        num_scales=1000,
-        std_min=0.00085,
-        std_max=0.0120,
-    )
+
     n(defualt_config, "model", "fm_ldm").update(
         scheduler="rfns",  ## vpns,vens, rfns
     )
@@ -218,6 +214,19 @@ def default_configs():
         lora_bias_trainable="all",
     )
 
+    # model noise scheduler
+    n(defualt_config, "model", "vpns").update(
+        schedule_type="sd",  ## sd, linear
+        num_scales=1000,
+        std_min=0.00085,
+        std_max=0.0120,
+    )
+    n(defualt_config, "model", "vens").update(
+        schedule_type="sd",  ## sd, linear
+        num_scales=1000,
+        std_min=0.00085,
+        std_max=0.0120,
+    )
     n(defualt_config, "optim").update(
         optimizer="adamw",
     )

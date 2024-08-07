@@ -193,11 +193,12 @@ class BaseModel(ABC):
         else:
             preds, extra_info = output, {}
         preds, extra_info = self.after_predict(x, t, y, use_ema, preds, extra_info)
+        # logging.info(f"t:{t[0]}")
         return preds, extra_info
 
     def before_predict(self, x, t, y, use_ema):
-        if self.continuous:
-            t = t * self.ns.N
+        # if self.continuous:
+        #     t = t * self.ns.N
         return x, t, y, use_ema
 
     def after_predict(self, x, t, y, user_ema, preds, extra_info):
@@ -291,11 +292,13 @@ class BaseModel(ABC):
         ):
             return
         assert x.shape[0] > 0
+        # logging.info(f"t:{t[0]}")
         x_0, preds_0, sigma = x[0], preds[0], self.ns.marginal_coef(t)[1][0]
         expected_norm = self.cal_expected_norm(sigma)
         x_mean, x_max, x_min = x_0.mean(), x_0.max(), x_0.min()
         preds_0_norm = torch.norm(preds_0)
         sampling_info = {
+            "t": t[0],
             "sigma": sigma,
             "x_mean": x_mean,
             "x_max": x_max,

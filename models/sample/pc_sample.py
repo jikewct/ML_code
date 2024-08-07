@@ -67,23 +67,26 @@ class PCSample(SDESample):
             raise NotImplementedError(f"{rsde.fsde.__class__.__name__} is not implemented")
 
     def ve_ancestral_sampling_predict(self, x, t, y, use_ema, uncond_y, guidance_scale):
-        t_step = self.ns.convert_t_cnt2dct(t)
-        sigma = self.ns.discrete_sigmas[t_step]
-        sigma_prev = self.ns.discrete_sigmas_prev[t_step]
+        _, sigma_t = self.ns.marginal_coef(t)
+        prev_t = t - 1.0 / self.ns.N
+        prev_t = torch.where(prev_t > 0, prev_t, self.ns.EPS)
+        _, sigma_prev_t = self.ns.marginal_coef(prev_t)
         score, _ = self.model.score_sampling_predict(x, t, y, use_ema, uncond_y, guidance_scale)
-        x_mean = x + batch_scalar_prod(sigma**2 - sigma_prev**2, score)
-        std = torch.sqrt((sigma_prev**2 * (sigma**2 - sigma_prev**2)) / (sigma**2))
+        _, recursive_sigma_t = self.ns.recursive_cond_coef(t)
+        x_mean = x + batch_scalar_prod(recursive_sigma_t**2, score)
+        std = sigma_prev_t * recursive_sigma_t / sigma_t
         noise = torch.randn_like(x)
         x = x_mean + batch_scalar_prod(std, noise)
         return x, x_mean
 
     def vp_ancestral_sampling_predict(self, x, t, y, use_ema, uncond_y, guidance_scale):
-        alpha_t, beta_t = self.ns.get_alpha(t), self.ns.get_beta(t)
+        # alpha_t, beta_t = self.ns.get_alpha(t), self.ns.get_beta(t)
+        sqrt_alpha_t, sqrt_beta_t = self.ns.recursive_cond_coef(t)
         score, _ = self.model.score_sampling_predict(x, t, y, use_ema, uncond_y, guidance_scale)
-        x_mean = batch_scalar_prod(1 / torch.sqrt(alpha_t), x + batch_scalar_prod(beta_t, score))
+        x_mean = batch_scalar_prod(1 / sqrt_alpha_t, x + batch_scalar_prod(sqrt_beta_t**2, score))
         prev_t = t - 1.0 / self.ns.N
         prev_t = torch.where(prev_t > 0, prev_t, self.ns.EPS)
-        std = torch.sqrt(beta_t * (1.0 - self.ns.get_alpha_cum(prev_t)) / (1.0 - self.ns.get_alpha_cum(t)))
+        std = sqrt_beta_t * (1.0 - self.ns.marginal_coef(prev_t)[0]) / (1.0 - self.ns.marginal_coef(t)[0])
         noise = torch.randn_like(x)
         x = x_mean + batch_scalar_prod(std, noise)
         return x, x_mean
@@ -103,7 +106,8 @@ class PCSample(SDESample):
             noise = torch.randn_like(x)
             grad_norm = torch.norm(grad.reshape(grad.shape[0], -1), dim=1).mean()
             noise_norm = torch.norm(noise.reshape(noise.shape[0], -1), dim=1).mean()
-            step_size = (snr * noise_norm / grad_norm) ** 2 * 2 * self.ns.get_alpha(t)
+            sqrt_alpha_t = self.ns.recursive_cond_coef(t)[0]
+            step_size = (snr * noise_norm / grad_norm) ** 2 * 2 * sqrt_alpha_t**2
             x_mean = x + batch_scalar_prod(step_size, grad)
             x = x_mean + batch_scalar_prod(torch.sqrt(2 * step_size), noise)
         return x, x_mean
@@ -113,7 +117,8 @@ class PCSample(SDESample):
             grad, _ = self.model.score_sampling_predict(x, t, y, use_ema, uncond_y, guidance_scale)
             noise = torch.randn_like(x)
             std = self.ns.marginal_coef(t)[1]
-            step_size = (snr * std) ** 2 * 2 * self.ns.get_alpha(t)
+            sqrt_alpha_t = self.ns.recursive_cond_coef(t)[0]
+            step_size = (snr * std) ** 2 * 2 * sqrt_alpha_t**2
             x_mean = x + batch_scalar_prod(step_size, grad)
             x = x_mean + batch_scalar_prod(torch.sqrt(2 * step_size), noise)
         return x, x_mean

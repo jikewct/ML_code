@@ -31,7 +31,6 @@ class TrainDiffusion:
                 resume="allow",
                 id=pipeline.uuid,
                 name=pipeline.Name + "-" + self.args.mode + datetime.datetime.now().strftime(":%Y-%m-%d-%H-%M"),
-                quiet=True,
             )
             # wandb.log({"net": pipeline.get_model()})
             logging.info(f"wandb url:{run.get_url()}")

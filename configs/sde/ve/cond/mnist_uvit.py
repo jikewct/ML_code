@@ -17,7 +17,7 @@
 """Train the original DDPM model."""
 
 from configs.config_utils import *
-from configs.default_mscoco_configs import get_default_configs
+from configs.default_mnist_configs import get_default_configs
 
 
 def get_config():
@@ -27,7 +27,7 @@ def get_config():
         epochs=10000,
         snapshot_freq=500,
         log_freq=50,
-        eval_freq=50,
+        eval_freq=500,
         test_metric_freq=1000000,
         resume=True,
         continuous=False,
@@ -35,44 +35,33 @@ def get_config():
         # model_checkpoint="/home/jikewct/public/jikewct/Model/uvit/mscoco_uvit_small.pth",
     )
     c(config, "data").update(
-        dataset="mscoco_32x32_feature",
-        img_size=(32, 32),
-        img_channels=4,
-        root_path="/home/jikewct/Dataset/coco2017/coco_256_feature",
+        num_classes=11,
     )
-    c(config, "data", "mscoco_32x32_feature").update()
     c(config, "model").update(
-        name="vpsde_ldm",
-        nn_name="uvit_t2i",
+        name="vesde",
+        nn_name="uvit",
         conditional=True,
         grad_checkpoint=True,
     )
     c(config, "model", "condition").update(
-        condition_type="text",
-        cond_embedder_name="frozen_clip_embedder",
+        condition_type="class",
+        cond_embedder_name="",
         cfg=True,
         p_cond=0.1,
-        empty_latent_path="/home/jikewct/Dataset/coco2017/coco_256_feature/empty_latent.npy",
+        empty_latent_path="",
+        empty_label=10,
     )
-    c(config, "model", "ldm").update(
-        autoencoder_name="frozen_autoencoder_kl",
+    c(config, "model", "vesde").update(
+        scheduler="vens",  ## vpns,vens, rfns
     )
-
-    c(config, "model", "vpsde").update(
-        scheduler="vpns",  ## vpns,vens, rfns
-    )
-    c(config, "model", "vpns").update(
-        schedule_type="sd",  ## sd, linear
-        num_scales=1000,
-        std_min=0.00085,
-        std_max=0.0120,
-    )
-    c(config, "model", "vpsde_ldm").update()
-    c(config, "model", "condition", "frozen_clip_embedder").update(
-        pretrained_path="/home/jikewct/public/jikewct/Model/clip-vit-large-patch14",
+    c(config, "model", "vens").update(
+        schedule_type="geo",  ## sd, linear
+        num_scales=232,
+        std_min=0.01,
+        std_max=50,
     )
 
-    c(config, "model", "uvit_t2i").update(
+    c(config, "model", "uvit").update(
         # cacl from autoencoder_kl ch_mult config
         img_size=config.data.img_size[0],
         patch_size=2,
@@ -83,61 +72,39 @@ def get_config():
         mlp_ratio=4,
         qkv_bias=False,
         mlp_time_embed=False,
-        clip_dim=768,
-        num_clip_token=77,
+        num_classes=config.data.num_classes,
         use_checkpoint=config.model.grad_checkpoint,
-    )
-    c(config, "model", "ldm", "frozen_autoencoder_kl").update(
-        double_z=True,
-        z_channels=4,
-        resolution=256,
-        in_channels=3,
-        out_ch=3,
-        ch=128,
-        ch_mult=[1, 2, 4, 4],
-        num_res_blocks=2,
-        attn_resolutions=[],
-        dropout=0.0,
-        embed_dim=4,
-        pretrained_path="/home/jikewct/public/jikewct/Model/stable_diffusion/stable-diffusion/autoencoder_kl.pth",
-        scale_factor=0.23010,
     )
     c(config, "test").update(
         batch_size=5,
-        num_samples=1,
+        num_samples=5,
         save_path="./data/test/",
     )
     c(config, "sampling").update(
         log_freq=1,
         method="pc",  # ode, numerical, pc, dpm_solver
         denoise=True,
-        sampling_conditions=[
-            "A green train is coming down the tracks.",
-            "A group of skiers are preparing to ski down a mountain.",
-            "A small kitchen with a low ceiling.",
-            "A group of elephants walking in muddy water.",
-            "A living area with a television and a table.",
-        ],
+        sampling_conditions=[6, 8, 9],
         guidance_scale=1.0,
     )
     c(config, "sampling", "numerical").update(
         rtol=1e-3,
         atol=1e-3,
-        equation_type="sde",
+        equation_type="ode",
         # ode in (eluer, rk45),
         # sde in 'euler', 'euler_heun', 'heun', 'log_ode', 'midpoint', 'milstein', 'reversible_heun', 'srk']
-        method="srk",
+        method="rk45",
         sampling_steps=20,
     )
     c(config, "sampling", "ode").update(
-        sampling_steps=50,
+        sampling_steps=100,
     )
     c(config, "sampling", "dpm_solver").update(
         sampling_steps=50,
     )
     c(config, "sampling", "pc").update(
-        predictor="ancestralsampling",  # euler,reversediffusion,ancestralsampling,""
-        corrector="langevin",  # ald,langevin, ""
+        predictor="reversediffusion",  # euler,reversediffusion,ancestralsampling,""
+        corrector="ald",  # ald,langevin, ""
         n_step_each=1,
         snr=0.16,
     )
@@ -156,6 +123,6 @@ def get_config():
         warmup_steps=2000,
     )
 
-    config.pipeline = "LDMPipeLine"
+    config.pipeline = "SDEPipeLine"
 
     return config

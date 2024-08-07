@@ -45,6 +45,7 @@ class BasePipeLine(ABC):
             self.sampling_conditions = self.config.sampling.sampling_conditions
             self.guidance_scale = self.config.sampling.guidance_scale
             self.condition_param = self.config.model.condition
+            self.empty_label = self.condition_param.empty_label
             self.empty_latent = None
             if self.condition_param.empty_latent_path != "":
                 self.empty_latent = torch.from_numpy(np.load(self.condition_param.empty_latent_path)).to(self.device)
@@ -144,7 +145,7 @@ class BasePipeLine(ABC):
         torch.save(state, os.path.join(self.ckpt_path, f"{self.current_train_step}.ckpt"))
         ## save network file for load checkpoint  or import easier
         torch.save(state["network"], os.path.join(self.ckpt_path, f"{self.current_train_step}-network.pth"))
-        logging.info(f"save state success! path: {self.ckpt_path}, step: {self.current_train_step}")
+        logging.info(f"save state success! path: {self.ckpt_path} step: {self.current_train_step}")
 
     def load_state(self, step, path=None):
         if path is None:
@@ -259,7 +260,7 @@ class BasePipeLine(ABC):
 
     def condition_transform(self, y):
         if self.condition_param.cfg:
-            replaced_data = self.empty_latent if self.condition_param.condition_type == "text" else torch.zeros_like(y)
+            replaced_data = self.empty_latent if self.condition_param.condition_type == "text" else torch.ones_like(y) * self.empty_label
             y = tensor_trans.replace_sample_by_cond(y, replaced_data, self.condition_param.p_cond)
         return y
 
@@ -312,16 +313,17 @@ class BasePipeLine(ABC):
                 "samples": [wandb.Image(sample) for sample in self.eval_samples],
             }
         )
+        ##, m_mr:{:.2f}, m_a:{:.2f}, m_ma:{:.2f}, m_r:{:.2f}
         logging.info(
-            "====epoch:{:04d},train_step:{:08d}, eval_loss:{:.8f}, eval_cost:{:.2f}, m_mr:{:.2f}, m_a:{:.2f}, m_ma:{:.2f}, m_r:{:.2f} ====".format(
+            "====epoch:{:04d},train_step:{:08d}, eval_loss:{:.8f}, eval_cost:{:.2f} ====".format(
                 log_info["epoch"],
                 log_info["train_step"],
                 log_info["eval_loss"],
                 log_info["eval_cost"],
-                log_info["m_max_reserved"],
-                log_info["m_allocated"],
-                log_info["m_max_allocated"],
-                log_info["m_reserved"],
+                # log_info["m_max_reserved"],
+                # log_info["m_allocated"],
+                # log_info["m_max_allocated"],
+                # log_info["m_reserved"],
             )
         )
         if self.config.training.log_to_wandb:
@@ -340,18 +342,18 @@ class BasePipeLine(ABC):
                 "train_cost": self.log_time_meter.interval(),
             }
         )
-
+        ##, m_mr:{:.2f}, m_a:{:.2f},  m_ma:{:.2f},m_r:{:.2f}
         logging.info(
-            "epoch:{:04d},train_step:{:08d}, train_loss:{:.8f}, train_cost:{:.2f}, lr:{:.8f}, m_mr:{:.2f}, m_a:{:.2f},  m_ma:{:.2f},m_r:{:.2f}".format(
+            "epoch:{:04d},train_step:{:08d}, train_loss:{:.8f}, train_cost:{:.2f}, lr:{:.8f}".format(
                 log_info["epoch"],
                 log_info["train_step"],
                 log_info["train_loss"],
                 log_info["train_cost"],
                 log_info["lr"],
-                log_info["m_max_reserved"],
-                log_info["m_allocated"],
-                log_info["m_max_allocated"],
-                log_info["m_reserved"],
+                # log_info["m_max_reserved"],
+                # log_info["m_allocated"],
+                # log_info["m_max_allocated"],
+                # log_info["m_reserved"],
             )
         )
         if self.config.training.log_to_wandb:
@@ -379,13 +381,13 @@ class BasePipeLine(ABC):
         if self.sampling_conditions is None:
             y = torch.randint(0, self.config.data.num_classes, [num], device=self.device)
             if self.condition_param.cfg:
-                uncond_y = torch.zeros_like(y)
+                uncond_y = torch.ones_like(y) * self.empty_label
         else:
             label_length = len(self.sampling_conditions)
             y = self.sampling_conditions * (num // label_length + 1)
             if self.condition_param.condition_type == "class":
                 y = torch.as_tensor(y[:num], dtype=torch.int, device=self.device)
-                uncond_y = torch.zeros_like(y)
+                uncond_y = torch.ones_like(y) * self.empty_label
             else:
                 y = self.model.encode_text_condition(y[:num])
                 uncond_y = einops.repeat(self.empty_latent, "1 L D -> B L D", B=num)
